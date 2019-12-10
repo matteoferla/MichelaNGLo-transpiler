@@ -13,6 +13,7 @@ __copyright__ = 'GNU'
 __version__ = "2"
 
 from typing import Sequence, Dict, List
+import functools
 
 import argparse, os, re, threading
 from copy import deepcopy
@@ -107,6 +108,7 @@ class PyMolTranspilerDeco:
     lock = threading.Lock()
 
     def __init__(self, fun):
+        functools.update_wrapper(self, fun)
         self.fun = fun
 
 
@@ -157,8 +159,8 @@ class PyMolTranspilerDeco:
 class PyMolTranspiler:
     """
     The class initialises as a blank object with settings unless the `file` (filename of PSE file) or `view` and/or `reps` is passed.
-    For views see `.convert_view(view_string)`, which processes the output of PyMOL command `set_view`
-    For representation see `.convert_reps(reps_string)`, which process the output of PyMOL command `iterate 1UBQ, print resi, resn,name,ID,reps`
+    For views see ``.convert_view(view_string)``, which processes the output of PyMOL command `set_view`
+    For representation see ``.convert_reps(reps_string)``, which process the output of PyMOL command `iterate 1UBQ, print resi, resn,name,ID,reps`
 
     :var swatch: all the pymol colors
     :vartype swatch: ColorSwatch
@@ -929,8 +931,8 @@ class PyMolTranspiler:
         """
         determine what colors we have.
         ``{'carbon':carboncolorset,'non-carbon': colorset}``
-        self.elemental_mapping = {}
         """
+        self.elemental_mapping = {}
         self.catenary_mapping = {} #pertaining to chains...
         self.residual_mapping = {}
         self.serial_mapping = {}

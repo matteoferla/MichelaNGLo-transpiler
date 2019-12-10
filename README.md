@@ -112,32 +112,34 @@ Converter. `__init__` does not interact with PyMOL, so does not use the lock. Un
 
 
 
-### classmethod chain_removal_code()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+### classmethod chain_removal_code(code, outfile, chains)
+Create a mutant protein based on a list of mutations on a PDB code.
 
 
-* **Variables**
+* **Parameters**
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
-
-
-
-### classmethod chain_removal_file()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+    
+    * **code** – str pdb code.
 
 
-* **Variables**
+    * **outfile** – str the file to save the mod as.
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
 
+    * **chains** – list of str chain id in the pdb loaded.
+
+
+
+* **Returns**
+
+    
+
+
+### classmethod chain_removal_file(infile, outfile, chains)
+Create a mutant protein based on a list of mutations on a PDB file path.
+:param infile: str
+:param outfile: str the file to save the mod as.
+:param chains: lsit of str chain id in the pdb loaded.
+:return:
 
 
 ### static collapse_list(l: Sequence)
@@ -147,7 +149,6 @@ Given a list of residues makes a list of hyphen range string
 ### convert_color(uniform_non_carbon=False, inner_tabbed=1, \*\*settings)
 determine what colors we have.
 `{'carbon':carboncolorset,'non-carbon': colorset}`
-self.elemental_mapping = {}
 
 
 ### classmethod convert_mesh(fh, scale=0, centroid_mode='unaltered', origin=None)
@@ -208,7 +209,7 @@ pymol.cmd.get(“fog_start”)
 
 
 
-### current_task( = '[2019-12-10 15:22:38.355816] idle')
+### current_task( = '[2019-12-10 15:37:01.119582] idle')
 
 ### describe()
 determine how and what the chains are labelled and what are their ranges.
@@ -289,79 +290,112 @@ If the output is set to string, the string will be a JS command that will requir
 
 
 
-### classmethod load_pdb()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+### classmethod load_pdb(file)
+Loads a pdb file into a transpiler obj. and fixes it.
 
 
-* **Variables**
+* **Parameters**
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
+    **file** – str file name
+
+
+
+* **Returns**
+
+    self
 
 
 
 ### classmethod log(msg)
 
-### classmethod mutate_code()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+### classmethod mutate_code(code, outfile, mutations, chain)
+Create a mutant protein based on a list of mutations on a PDB code.
 
 
-* **Variables**
+* **Parameters**
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
-
-
-
-### classmethod mutate_file()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+    
+    * **code** – str pdb code.
 
 
-* **Variables**
+    * **outfile** – str the file to save the mod as.
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
 
+    * **mutations** – list of string in the single letter format (A234P) without “p.”.
+
+
+    * **chain** – str chain id in the pdb loaded.
+
+
+
+* **Returns**
+
+    
+
+
+### classmethod mutate_file(infile, outfile, mutations, chain)
+Create a mutant protein based on a list of mutations on a PDB file path.
+
+
+* **Parameters**
+
+    
+    * **infile** – str
+
+
+    * **outfile** – str the file to save the mod as.
+
+
+    * **mutations** – list of string in the single letter format (A234P) without “p.”.
+
+
+    * **chain** – str chain id in the pdb loaded.
+
+
+
+* **Returns**
+
+    
 
 
 ### parse_ss(data=None, \*\*settings)
 Secondary structure
 
 
-### classmethod renumber()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+### classmethod renumber(pdb, definitions)
+Fetches a pdb file into a transpiler obj.
 
 
-* **Variables**
+* **Parameters**
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
-
-
-
-### classmethod sdf_to_pdb()
-Decorator for the bound methods of PyMolTranspiler that use Pymol.
-The session is shared… so only one thread at the time ought to use PyMOL.
-If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
-Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
-Currently, each extra concurrent thread simply waits or dies if it waits too long.
+    
+    * **file** – str file name
 
 
-* **Variables**
+    * **definitions** – Structure.chain_definitions
 
-    **lock** (*threading.Lock*) – the lock. A class attribute.
+
+[{‘chain’: ‘A’, ‘uniprot’: ‘Q9BZ29’, ‘x’: 1605, ‘y’: 2069, ‘offset’: 1604, ‘range’: ‘1605-2069’, ‘name’: None, ‘description’: None},
+:return: self
+
+
+### classmethod sdf_to_pdb(infile: str, reffile: str)
+A special class method to convert a sdf to pdb but with the atom index shifted so that the pdb can be cat’ed.
+
+
+* **Parameters**
+
+    
+    * **infile** – sdf file
+
+
+    * **reffile** – pdb file for the indices.
+
+
+
+* **Returns**
+
+    PDB block
 
 
 
