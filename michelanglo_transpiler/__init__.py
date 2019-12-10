@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 __doc__ = \
     """
     NB. Written for python 3, not tested under 2. See readme.md
@@ -10,6 +11,8 @@ __date__ = "2019 A.D."
 __license__ = "Cite me!"
 __copyright__ = 'GNU'
 __version__ = "2"
+
+from typing import Sequence, Dict, List
 
 import argparse, os, re, threading
 from copy import deepcopy
@@ -44,9 +47,22 @@ from Bio.Data.IUPACData import protein_letters_1to3 as p1to3
 ###############################################################
 
 class ColorItem:
-    def __init__(self, value):
+    def __init__(self, value: Sequence):
+        """
+        ``value`` is a tuple outputed from Pymol by (n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()
+        such as ``('bismuth', 5358, (0.6196078658103943, 0.30980393290519714, 0.7098039388656616))``
+        :param value: sequence of (name, PyMol index, (R, G, B)) where R, G, B is under 1.
+        :type value: sequence of three (str, int, (float, float, float))
+        :var name: name of color
+        :vartype name: str
+        :var index: PyMOL index of color
+        :vartype index: int
+        :var rgb: R, G, B
+        :vartype rgb: Sequence
+        :var hex: hex string form of color
+        :vartype hex: str
+        """
         assert len(value) == 3, 'value has to be tuple outputed from Pymol by (n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()'
-        # ('bismuth', 5358, (0.6196078658103943, 0.30980393290519714, 0.7098039388656616))
         self.name = value[0]
         self.index = value[1]
         self.rgb = value[2]
@@ -57,7 +73,7 @@ class ColorSwatch:
         """
         ColorSwatch()._swatch is a dictionary with indicing being the pymol color number. The values are ColorItem instances.
         Preloading the colors is faster than querying pymol.
-        `print [(n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()]` in Pymol generates a good amount, but it is not the full amount.
+        ``print [(n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()]`` in Pymol generates a good amount, but it is not the full amount.
         :param colors: a list like [('white', 0, (1.0, 1.0, 1.0))]
         """
         self._swatch = {}
@@ -65,7 +81,10 @@ class ColorSwatch:
             c=ColorItem(color)
             self._swatch[c.index]=c
 
-    def __getitem__(self, index): # a pymol color index
+    def __getitem__(self, index: int) -> ColorItem:
+        """
+        :param index: a pymol color index
+        """
         if int(index) in self._swatch:
             return self._swatch[int(index)]
         else:
@@ -79,6 +98,8 @@ class PyMolTranspilerDeco:
     If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
     Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
     Currently, each extra concurrent thread simply waits or dies if it waits too long.
+    :var lock: the lock. A class attribute.
+    :vartype lock: threading.Lock
     """
     lock = threading.Lock()
 
@@ -102,10 +123,16 @@ class PyMolTranspilerDeco:
             raise err
 
     def clean_up(self):
+        """
+        Reset the Pymol instance without calling reintialise
+        """
         pymol.cmd.remove('all')
         pymol.cmd.delete('all')
 
     def close_up(self):
+        """
+        Calls ``clean_up`` and releases the lock.
+        """
         self.clean_up()
         if self.lock.locked():
             self.lock.release()
@@ -114,6 +141,9 @@ class PyMolTranspilerDeco:
             warn('The lock was off already...')
 
     def start_up(self):
+        """
+        Starts the task in ``self.fun`` and takes the lock or waits.
+        """
         if not self.lock.acquire(timeout=60): #one minute wait.
             self.clean_up() #something failed very very ungracefully.
             self.lock.acquire()
@@ -126,6 +156,8 @@ class PyMolTranspiler:
     The class initialises as a blank object with settings unless the `file` (filename of PSE file) or `view` and/or `reps` is passed.
     For views see `.convert_view(view_string)`, which processes the output of PyMOL command `set_view`
     For representation see `.convert_reps(reps_string)`, which process the output of PyMOL command `iterate 1UBQ, print resi, resn,name,ID,reps`
+    :var swatch: all the pymol colors
+    :vartype swatch: ColorSwatch
     """
     # this is the silliest but straightforwardest way to implement a log that does not cause drama...
     current_task = f'[{datetime.utcnow()}] idle'
@@ -214,7 +246,7 @@ class PyMolTranspiler:
 
     def __init__(self, file=None, verbose=False, validation=False, view=None, representation=None, pdb='', skip_disabled=True, job='task', run_analysis=True, **settings):
         """
-        Converter
+        Converter. ``__init__`` does not interact with PyMOL, so does not use the lock. Unless ``run_analysis`` is specified then ``_postinit()`` is called which does.
         :param: job: this is needed for the async querying of progress in the app, but not the transpiler code itself. see .log method
         :param: file: filename of PSE file.
         :param verbose: print?
@@ -387,10 +419,13 @@ class PyMolTranspiler:
         if representation:
             self.convert_representation(representation, **settings)
             self.log(f'[JOB={self.job}] Reps converted.')
+        return self
 
-    def describe(self):
-        ## determine how and what the chains are labelled and what are their ranges.
-        # {'peptide': [f'{first_resi}-{last_resi}:{chain}', ..], 'hetero': [f'[{resn}]{resi}:{chain}', ..]}
+    def describe(self) -> Dict:
+        """
+        determine how and what the chains are labelled and what are their ranges.
+        ``{'peptide': [f'{first_resi}-{last_resi}:{chain}', ..], 'hetero': [f'[{resn}]{resi}:{chain}', ..]}``
+        """
         first_resi = defaultdict(lambda: 9999)
         last_resi = defaultdict(lambda: -9999)
         heteros = set()
@@ -485,7 +520,13 @@ class PyMolTranspiler:
 
     @classmethod
     @PyMolTranspilerDeco
-    def sdf_to_pdb(cls, infile, reffile):
+    def sdf_to_pdb(cls, infile: str, reffile: str) -> str:
+        """
+        A special class method to convert a sdf to pdb but with the atom index shifted so that the pdb can be cat'ed.
+        :param infile: sdf file
+        :param reffile: pdb file for the indices.
+        :return: PDB block
+        """
         combofile = infile.replace('.sdf', '_combo.pdb')
         minusfile = infile.replace('.sdf', '_ref.pdb')
         pymol.cmd.load(infile, 'ligand')
@@ -812,8 +853,10 @@ class PyMolTranspiler:
         return self
 
     @staticmethod
-    def collapse_list(l):
-        ## not implemented
+    def collapse_list(l: Sequence) -> List:
+        """
+        Given a list of residues makes a list of hyphen range string
+        """
         l = sorted(l)
         if len(l) < 2:
             return l
@@ -835,6 +878,9 @@ class PyMolTranspiler:
 
 
     def get_reps(self, inner_tabbed=1, stick='sym_licorice', **settings):  # '^'+atom['chain']
+        """
+        This method is not used.
+        """
         warn('This method will be removed soon.', DeprecationWarning)
         assert self.atoms, 'Needs convert_reps first'
         code = ['//representations','protein.removeAllRepresentations();']
@@ -864,9 +910,11 @@ class PyMolTranspiler:
         return code #self.indent(code, inner_tabbed)
 
     def convert_color(self, uniform_non_carbon=False, inner_tabbed=1, **settings):
-        #determine what colors we have.
-        #{'carbon':carboncolorset,'non-carbon': colorset}
+        """
+        determine what colors we have.
+        ``{'carbon':carboncolorset,'non-carbon': colorset}``
         self.elemental_mapping = {}
+        """
         self.catenary_mapping = {} #pertaining to chains...
         self.residual_mapping = {}
         self.serial_mapping = {}
@@ -900,6 +948,9 @@ class PyMolTranspiler:
         return self
 
     def parse_ss(self, data=None, **settings):
+        """
+        Secondary structure
+        """
         def _deal_with():
             if ss_last == 'H':  # previous was the other type
                 self.ss.append('{typos}  {ss_count: >3} {ss_count: >3} {resn_start} {chain} {resi_start: >4}  {resn_end} {chain} {resi_end: >4} {h_class: >2}                                  {length: >2}'.format(
