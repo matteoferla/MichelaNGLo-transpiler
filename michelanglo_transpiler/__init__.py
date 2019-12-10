@@ -3,7 +3,7 @@
 from __future__ import annotations
 __doc__ = \
     """
-    NB. Written for python 3, not tested under 2. See readme.md
+    NB. Written for python 3, not tested under 2.
     """
 __author__ = "Matteo Ferla. [Github](https://github.com/matteoferla)"
 __email__ = "matteo.ferla@gmail.com"
@@ -51,6 +51,7 @@ class ColorItem:
         """
         ``value`` is a tuple outputed from Pymol by (n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()
         such as ``('bismuth', 5358, (0.6196078658103943, 0.30980393290519714, 0.7098039388656616))``
+
         :param value: sequence of (name, PyMol index, (R, G, B)) where R, G, B is under 1.
         :type value: sequence of three (str, int, (float, float, float))
         :var name: name of color
@@ -74,6 +75,7 @@ class ColorSwatch:
         ColorSwatch()._swatch is a dictionary with indicing being the pymol color number. The values are ColorItem instances.
         Preloading the colors is faster than querying pymol.
         ``print [(n, i, cmd.get_color_tuple(i)) for n,i in cmd.get_color_indices()]`` in Pymol generates a good amount, but it is not the full amount.
+
         :param colors: a list like [('white', 0, (1.0, 1.0, 1.0))]
         """
         self._swatch = {}
@@ -98,6 +100,7 @@ class PyMolTranspilerDeco:
     If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
     Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
     Currently, each extra concurrent thread simply waits or dies if it waits too long.
+
     :var lock: the lock. A class attribute.
     :vartype lock: threading.Lock
     """
@@ -156,6 +159,7 @@ class PyMolTranspiler:
     The class initialises as a blank object with settings unless the `file` (filename of PSE file) or `view` and/or `reps` is passed.
     For views see `.convert_view(view_string)`, which processes the output of PyMOL command `set_view`
     For representation see `.convert_reps(reps_string)`, which process the output of PyMOL command `iterate 1UBQ, print resi, resn,name,ID,reps`
+
     :var swatch: all the pymol colors
     :vartype swatch: ColorSwatch
     """
@@ -247,6 +251,7 @@ class PyMolTranspiler:
     def __init__(self, file=None, verbose=False, validation=False, view=None, representation=None, pdb='', skip_disabled=True, job='task', run_analysis=True, **settings):
         """
         Converter. ``__init__`` does not interact with PyMOL, so does not use the lock. Unless ``run_analysis`` is specified then ``_postinit()`` is called which does.
+
         :param: job: this is needed for the async querying of progress in the app, but not the transpiler code itself. see .log method
         :param: file: filename of PSE file.
         :param verbose: print?
@@ -425,6 +430,8 @@ class PyMolTranspiler:
         """
         determine how and what the chains are labelled and what are their ranges.
         ``{'peptide': [f'{first_resi}-{last_resi}:{chain}', ..], 'hetero': [f'[{resn}]{resi}:{chain}', ..]}``
+
+        :rtype: dict
         """
         first_resi = defaultdict(lambda: 9999)
         last_resi = defaultdict(lambda: -9999)
@@ -453,6 +460,7 @@ class PyMolTranspiler:
     def get_atom_id_of_coords(cls, coord):
         """
         Returns the pymol atom object correspondng to coord. "Needed" for distance.
+
         :param coord: [x, y, z] vector
         :return: atom
         """
@@ -477,6 +485,7 @@ class PyMolTranspiler:
     def load_pdb(cls, file):
         """
         Loads a pdb file into a transpiler obj. and fixes it.
+
         :param file: str file name
         :return: self
         """
@@ -497,6 +506,7 @@ class PyMolTranspiler:
     def renumber(cls, pdb, definitions):
         """
         Fetches a pdb file into a transpiler obj.
+
         :param file: str file name
         :param definitions: Structure.chain_definitions
         [{'chain': 'A', 'uniprot': 'Q9BZ29', 'x': 1605, 'y': 2069, 'offset': 1604, 'range': '1605-2069', 'name': None, 'description': None},
@@ -523,6 +533,7 @@ class PyMolTranspiler:
     def sdf_to_pdb(cls, infile: str, reffile: str) -> str:
         """
         A special class method to convert a sdf to pdb but with the atom index shifted so that the pdb can be cat'ed.
+
         :param infile: sdf file
         :param reffile: pdb file for the indices.
         :return: PDB block
@@ -551,6 +562,7 @@ class PyMolTranspiler:
     def _mutagen(outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
+
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
@@ -584,6 +596,7 @@ class PyMolTranspiler:
     def mutate_code(cls, code, outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
+
         :param code: str pdb code.
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
@@ -599,6 +612,7 @@ class PyMolTranspiler:
     def mutate_file(cls, infile, outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on a PDB file path.
+
         :param infile: str
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
@@ -617,6 +631,7 @@ class PyMolTranspiler:
     def _chain_removal(outfile, chains):
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
+
         :param outfile: str the file to save the mod as.
         :param chains: list str chain id in the pdb loaded.
         :return: None
@@ -631,6 +646,7 @@ class PyMolTranspiler:
     def chain_removal_code(cls, code, outfile, chains):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
+
         :param code: str pdb code.
         :param outfile: str the file to save the mod as.
         :param chains: list of str chain id in the pdb loaded.
@@ -658,7 +674,6 @@ class PyMolTranspiler:
         """
         Fix any issues with structure. see pymol_model_chain_segi.md for more.
         empty chain issue.
-        :return:
         """
         # This really ought to a class and this half-breed. But get new letter returns a letter not in old_chains
         old_chains = list()
@@ -737,6 +752,7 @@ class PyMolTranspiler:
     def get_view(self, output='matrix', **settings):
         """
         If the output is set to string, the string will be a JS command that will require the object stage to exist.
+
         :param output: 'matrix' | 'string'
         :return: np 4x4 matrix or a NGL string
         """
@@ -1012,6 +1028,7 @@ class PyMolTranspiler:
     def get_html(self, ngl='https://cdn.rawgit.com/arose/ngl/v0.10.4-1/dist/ngl.js', **settings):
         """
         Returns a string to be copy-pasted into HTML code.
+
         :param ngl: (optional) the address to ngl.js. If unspecified it gets it from the RawGit CDN
         :param viewport: (optional) the id of the viewport div, without the hash.
         :param image: (optional) advanced mode with clickable image?
@@ -1053,6 +1070,7 @@ class PyMolTranspiler:
         Given a fh or iterable of strings, return a mesh, with optional transformations.
         Note color will be lost.
         Only accepts trianglular meshes!
+
         :param fh: file handle
         :param scale: 0 do nothing. else Angstrom size
         :param centroid_mode: unaltered | origin | center
