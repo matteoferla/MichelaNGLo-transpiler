@@ -66,8 +66,8 @@ This is an integer with no information give. However, looking at how it behaves 
 ### The SS problem
 NGL does not assign secondary structure. Therefore, if not specified everything will be a turn/loop, so both the helices and sheet (especially) will look anemic.
 
-<img src="docs/images/sheeted.png" width="200">
-<img src="docs/images/unsheeted.png" width="200">
+<img src="images/sheeted.png" width="200">
+<img src="images/unsheeted.png" width="200">
 
 The script `SS.py` can generate this in PDB file via PyMol. However, the generated `SHEET` definition is not as it ought to be, as it gives out mulitple separate strands as opposed to a single multistrand sheet &mdash;It works though, so who cares? 
 
