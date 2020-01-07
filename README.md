@@ -13,8 +13,8 @@ This module is self-standing, so can be used outside of the app or protein-modul
 The conversion file, `michelanglo/transpiler.py` and the files in `michelanglo/transpiler_templates` are all that is required to use locally.
 They are in `michelanglo_app` to avoid allowing the app to do a relative import beyond the top-level package (`michelanglo_app`).
 
-For notes about the details about the conversion see [conversion.md](git_docs/conversion.md)
-For notes about the transpiler see [transpiler.md](git_docs/transpiler.md).
+For notes about the details about the conversion see [conversion.md](docs/conversion.md)
+For notes about the transpiler see [transpiler.md](docs/transpiler.md).
 
 ## Further details
 
