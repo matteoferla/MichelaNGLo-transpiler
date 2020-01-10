@@ -24,3 +24,4 @@ For notes about the transpiler see [transpiler.md](docs/transpiler.md).
 * [PyMol models and segi](docs/PyMOL_model_chains_segi.md)
 * [Note on surfaces](docs/notes_on_surfaces.md)
 * [Note on mmCIF and mmTF](docs/notes_on_mmCIF.md)
+* [Multiple Pymol sessions](docs/pymol_sessions.md)

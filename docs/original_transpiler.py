@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Dict, List
 __doc__ = \
     """
     NB. Written for python 3, not tested under 2.
-    
-    If something werid
-    
-    
     """
 __author__ = "Matteo Ferla. [Github](https://github.com/matteoferla)"
 __email__ = "matteo.ferla@gmail.com"
 __date__ = "2019 A.D."
 __license__ = "Cite me!"
-__copyright__ = 'MIT' #not that I care.
-__version__ = "3"
+__copyright__ = 'GNU'
+__version__ = "2"
 
 from typing import Sequence, Dict, List
+import functools
 
-import os, re
+import argparse, os, re, threading
 from copy import deepcopy
 from pprint import PrettyPrinter
 from collections import defaultdict
 pprint = PrettyPrinter().pprint
 
-import sys
+import sys, json
 from datetime import datetime
 from warnings import warn
 
@@ -34,46 +30,22 @@ if sys.version_info[0] < 3:
 
 import numpy as np
 from mako.template import Template
-import pymol2
+import markdown
+import string
+
+# prevent pymol from launching in normal mode.
+if __name__ == '__main__':
+    pymol_argv = ['pymol', '-qc']
+else:
+    import __main__
+    __main__.pymol_argv = ['pymol', '-qc']
+import pymol
+pymol.finish_launching()
+pymol.cmd.set('fetch_path', os.getcwd()+'/michelanglo_app/temp')
+
 from Bio.Data.IUPACData import protein_letters_1to3 as p1to3
 
-from threading import Lock
-
-
-
-class GlobalPyMOL(): #singleton but that waits for the other thread to release it.
-    pymol = pymol2.SingletonPyMOL()
-    pymol.start()
-    pylock = Lock()
-
-    def __init__(self):
-        pass
-
-    def __enter__(self):
-        if not self.pylock.acquire(timeout=60):
-            # something hung up.
-            self.pymol.cmd.remove('*')
-            self.pymol.cmd.delete('*')
-            self.pylock.release() #pointless roundtrip to be safe.
-            self.pylock.acquire()
-            return self.pymol
-
-        else:
-            self.pymol.cmd.delete('*')
-            return self.pymol
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.pymol.cmd.delete('*')
-        self.pylock.release()
-
-
 ###############################################################
-
-# import signal
-#
-# def sig_handler(signum, frame):
-#     print("segfault")
-# signal.signal(signal.SIGSEGV, sig_handler)
 
 class ColorItem:
     def __init__(self, value: Sequence):
@@ -98,8 +70,6 @@ class ColorItem:
         self.hex = "0x{0:02x}{1:02x}{2:02x}".format(int(value[2][0]*(2**8-1)),int(value[2][1]*(2**8-1)),int(value[2][2]*(2**8-1)))
 
 class ColorSwatch:
-    #pymol = pymol2.PyMOL()
-
     def __init__(self, colors):
         """
         ColorSwatch()._swatch is a dictionary with indicing being the pymol color number. The values are ColorItem instances.
@@ -119,29 +89,80 @@ class ColorSwatch:
         if int(index) in self._swatch:
             return self._swatch[int(index)]
         else:
-            warn(f'New color! {index}')
-            ci = ColorItem(['', index, GlobalPyMOL.pymol.cmd.get_color_tuple(int(index))])
-            self._swatch[ci.index] = ci
-            return ci
+            return ColorItem(['', index, pymol.cmd.get_color_tuple(int(index))])
+
+
+class PyMolTranspilerDeco:
+    """
+    Decorator for the bound methods of PyMolTranspiler that use Pymol.
+    The session is shared... so only one thread at the time ought to use PyMOL.
+    If a session raises an error, it should be caught so everyhting is cleaned closed and the error raised for the logger.
+    Conor has rightfully suggested that the lock should be handled by the scheduler. I.e. a request is made and the a job is added to a queue.
+    Currently, each extra concurrent thread simply waits or dies if it waits too long.
+    :var lock: the lock. A class attribute.
+    :vartype lock: threading.Lock
+    """
+    lock = threading.Lock()
+
+    def __init__(self, fun):
+        functools.update_wrapper(self, fun)
+        self.fun = fun
+
+
+    def __get__(self, obj, type=None):
+        return self.__class__(self.fun.__get__(obj, type))
+
+    def __call__(self, *args, **kwargs):
+        try:
+            self.start_up()
+            reply = self.fun(*args, **kwargs)
+            self.close_up()
+            return reply
+        except Exception as err:
+            if self.lock.locked(): #the code errored before the lock could be released.
+                self.close_up()
+                print('ERROR: ', err)
+            raise err
+
+    def clean_up(self):
+        """
+        Reset the Pymol instance without calling reintialise
+        """
+        pymol.cmd.remove('all')
+        pymol.cmd.delete('all')
+
+    def close_up(self):
+        """
+        Calls ``clean_up`` and releases the lock.
+        """
+        self.clean_up()
+        if self.lock.locked():
+            self.lock.release()
+            PyMolTranspiler.current_task = f'[{datetime.utcnow()}] idle'
+        else:
+            warn('The lock was off already...')
+
+    def start_up(self):
+        """
+        Starts the task in ``self.fun`` and takes the lock or waits.
+        """
+        if not self.lock.acquire(timeout=60): #one minute wait.
+            self.clean_up() #something failed very very ungracefully.
+            self.lock.acquire()
+            PyMolTranspiler.current_task = f'[{datetime.utcnow()}] working.'
+            warn('The thread waited for over a minute!')
+        self.clean_up()
 
 class PyMolTranspiler:
     """
-    The class initialises as a near blank object.
-    Historically, it was the transpiler object itself,
-    most of the functionality of which now is in ``Transpiler.transpile()``.
-    Say ``trans = PyMolTranspiler(job=User.get_username(request)).transpile(file=filename, **settings)``.
-
-    So there are three kinds of bound methods here.
-
-    * Methods with a self-contained pymol session
-    * Methods that need pymol started
-    * Methods that do not use pymol
-
-    The initialised object does not have a pymol session. ``self.pymol``.
+    The class initialises as a blank object with settings unless the `file` (filename of PSE file) or `view` and/or `reps` is passed.
+    For views see ``.convert_view(view_string)``, which processes the output of PyMOL command `set_view`
+    For representation see ``.convert_reps(reps_string)``, which process the output of PyMOL command `iterate 1UBQ, print resi, resn,name,ID,reps`
+    :var swatch: all the pymol colors
+    :vartype swatch: ColorSwatch
     """
-    # this is not used anymore.
+    # this is the silliest but straightforwardest way to implement a log that does not cause drama...
     current_task = f'[{datetime.utcnow()}] idle'
-    verbose = False
     #temp folder.
     tmp = os.getcwd()
     swatch = ColorSwatch([('white', 0, (1.0, 1.0, 1.0)), ('black', 1, (0.0, 0.0, 0.0)), ('blue', 2, (0.0, 0.0, 1.0)), ('green', 3, (0.0, 1.0, 0.0)), ('red', 4, (1.0, 0.0, 0.0)),
@@ -529,9 +550,9 @@ class PyMolTranspiler:
                                                   '4MO'  # molybdenum(iv) ion
                       )
 
-    def __init__(self, verbose=False, validation=False, pdb='', job='task'):
+    def __init__(self, file=None, verbose=False, validation=False, view=None, representation=None, pdb='', skip_disabled=True, job='task', run_analysis=True, **settings):
         """
-        Converter. ``__init__`` does not interact with PyMOL.
+        Converter. ``__init__`` does not interact with PyMOL, so does not use the lock. Unless ``run_analysis`` is specified then ``_postinit()`` is called which does.
         :param: job: this is needed for the async querying of progress in the app, but not the transpiler code itself. see .log method
         :param: file: filename of PSE file.
         :param verbose: print?
@@ -577,169 +598,147 @@ class PyMolTranspiler:
         self.distances=[] #and h-bonds...
         self.ss=[]
         self.code=''
-        self.temp_folder = os.getcwd() + '/michelanglo_app/temp'
-        self.pymol = None
         self.raw_pdb=None  #this is set from the instance `prot.raw_pdb = open(file).read()`
         self.custom_mesh = []
         self.description = {}
+        #self._logbook = []  ##not a logging instance!
+        #self.log = lambda msg: self._logbook.append(f'[{datetime.utcnow()} GMT] {msg}')
+        #swiched to class method... essentially:
+        # self.log = lambda msg: self.__class__.current_task := f'[{datetime.utcnow()} GMT] {msg}'
+        if run_analysis:
+            self._postinit(file, view, representation, skip_disabled, settings)
+            print('DEBUG', self.cartoon)
 
-
-    def transpile(self, file, view=None, representation=None, skip_disabled=True, **settings):
-        """
-        method that does the conversion of the PSE files.
-        For views see ``.convert_view(view_string)``, which processes the output of PyMOL command `set_view`
-        For representation see ``.convert_reps(reps_string)``, which process the output of PyMOL command
-        `iterate 1UBQ, print resi, resn,name,ID,reps`
-
-        **PyMOL session**: self-contained.
-        """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
-            if file:
-                self.log(f'[JOB={self.job}] file {file}')
-                assert '.pse' in file.lower(), 'Only PSE files accepted.'
-                ##orient
-                self.pymol.cmd.load(file)
-                self.log(f'[JOB={self.job}] File loaded.')
-                v = self.pymol.cmd.get_view()
-                self.convert_view(v)
-                self.log(f'[JOB={self.job}] View converted.')
-                self.fix_structure()
-                self.log(f'[JOB={self.job}] Secondary structure fix applied.')
-                names_for_mesh_route = [] #this is for a last ditch attempt.
-                names_not_mesh = []
-                ### sort the pymol objetcs into relevant methods
-
-                self.log(f'[JOB={self.job}] {self.pymol.cmd.get_names()}')
-                for obj_name in self.pymol.cmd.get_names():
-                    obj = self.pymol.cmd.get_session(obj_name)['names'][0]
-                    self.log(f'[JOB={self.job}] {obj_name}')
-                    """
-                    https://pymolwiki.org/index.php/Get_session
-                    0 => name
-                    1 => obj or sele?
-                    2 => enabled?
-                    3 => reps
-                    4 => obj_type
-                    5 => obj_data... complicated.
-                    6 => group_name
-                    """
-                    #self.pymol.cmd.get_type(obj_name) equivalents in comments
-                    if obj[4] == 1: #object:molecule
-                        if obj[1]:
-                            continue #PyMOL selection has no value.
-                        if obj[2] == 0: # PyMOL disabled
-                            if skip_disabled:
-                                names_not_mesh.append(obj_name)
-                            else:
-                                raise NotImplementedError()
-                        else:#enabled
-                            """ the attr names in get_model differ slightly from the ones iterate gives.
-                             as raw pymol output needs to  be an option and
-                             the reps variable differs from flags (not even sure they are the same)
-                             the get_model way has been depracated, even though iterate seems more barbarous.
-                             here is the old code:
-                            data = [{'ID': atom.id,
-                                     'chain': atom.chain,
-                                     'resi': atom.resi, #resi_number is int, but has offset issues?
-                                     'resn': atom.resn, #3letter
-                                     'name': atom.name,
-                                     'elem': atom.symbol,
-                                     'reps': atom.flags,
-                                     'color': atom.color_code,
-                                     'segi': atom.segi}
-                                    for atom in pymol.cmd.get_model(obj_name)]
-                            """
-                            self.log(f'[JOB={self.job}] 1')
-                            myspace = {'data': []}  # myspace['data'] is the same as self.atoms
-                            self.pymol.cmd.iterate(obj_name, self._iterate_cmd, space=myspace)
-                            self.log(f'[JOB={self.job}] iterate')
-                            self.convert_representation(myspace['data'], **settings)
-                            self.log(f'[JOB={self.job}] converted')
-                            self.stick_transparency = float(self.pymol.cmd.get('stick_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.surface_transparency = float(self.pymol.cmd.get('transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.cartoon_transparency = float(self.pymol.cmd.get('cartoon_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.sphere_transparency = float(self.pymol.cmd.get('sphere_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.ribbon_transparency = float(self.pymol.cmd.get('ribbon_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.fov = float(self.pymol.cmd.get("field_of_view"))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.fog = float(self.pymol.cmd.get("fog_start"))*100
-                            self.log(f'[JOB={self.job}] 1')
-                            self.parse_ss(myspace['data'])
-                            self.log(f'[JOB={self.job}] 1')
+    @PyMolTranspilerDeco
+    def _postinit(self, file, view, representation, skip_disabled, settings):
+        if file:
+            #print(file)
+            assert '.pse' in file.lower(), 'Only PSE files accepted.'
+            ##orient
+            pymol.cmd.load(file)
+            self.log(f'[JOB={self.job}] File loaded.')
+            v = pymol.cmd.get_view()
+            self.convert_view(v)
+            self.log(f'[JOB={self.job}] View converted.')
+            self.fix_structure()
+            self.log(f'[JOB={self.job}] Secondary structure fix applied.')
+            names_for_mesh_route = [] #this is for a last ditch attempt.
+            names_not_mesh = []
+            ### sort the pymol objetcs into relevant methods
+            for obj_name in pymol.cmd.get_names():
+                obj = pymol.cmd.get_session(obj_name)['names'][0]
+                """
+                https://pymolwiki.org/index.php/Get_session
+                0 => name
+                1 => obj or sele?
+                2 => enabled?
+                3 => reps
+                4 => obj_type
+                5 => obj_data... complicated.
+                6 => group_name
+                """
+                #pymol.cmd.get_type(obj_name) equivalents in comments
+                if obj[4] == 1: #object:molecule
+                    if obj[1]:
+                        continue #PyMOL selection has no value.
+                    if obj[2] == 0: # PyMOL disabled
+                        if skip_disabled:
                             names_not_mesh.append(obj_name)
-                    elif obj[4] == 2: #object:map
-                        names_for_mesh_route.append(obj_name)
-                    elif obj[4] == 3: #object:mesh
-                        names_for_mesh_route.append(obj_name)
-                    elif obj[4] == 4: #'object:measurement'
-                        if obj[2] == 0: # PyMOL disabled
-                            if skip_disabled:
-                                names_not_mesh.append(obj_name)
-                            else:
-                                raise NotImplementedError()
                         else:
-                            list_of_coordinates = obj[5][2][0][1]
-                            current_distances = []
-                            for pi in range(0, len(list_of_coordinates), 6):
-                                coord_A = list_of_coordinates[pi:pi + 3]
-                                coord_B = list_of_coordinates[pi + 3:pi + 6]
-                                current_distances.append({'atom_A': self.get_atom_id_of_coords(coord_A),
-                                                          'atom_B': self.get_atom_id_of_coords(coord_B)})
-                            self.distances.append({'pairs': current_distances, 'color': obj[5][0][2]})
-                    elif obj[4] == 5: # no idea
-                        continue
-                    elif obj[4] == 6: #object:cgo
-                        names_for_mesh_route.append(obj_name)
-                    elif obj[4] == 7: #object:surface
-                        names_for_mesh_route.append(obj_name)
-                    elif obj[4] == 12: # object:group
-                        continue
-                self.log(f'[JOB={self.job}] Reps converted.')
-                pdbfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse','.pdb'))
-                self.pymol.cmd.save(pdbfile)
-                self.describe()
-                self.pymol.cmd.delete('all')
-                if names_for_mesh_route:
-                    if 1==0: ##TODO reimplement
+                            raise NotImplementedError()
+                    else:#enabled
+                        """ the attr names in get_model differ slightly from the ones iterate gives.
+                         as raw pymol output needs to  be an option and
+                         the reps variable differs from flags (not even sure they are the same)
+                         the get_model way has been depracated, even though iterate seems more barbarous.
+                         here is the old code:
+                        data = [{'ID': atom.id,
+                                 'chain': atom.chain,
+                                 'resi': atom.resi, #resi_number is int, but has offset issues?
+                                 'resn': atom.resn, #3letter
+                                 'name': atom.name,
+                                 'elem': atom.symbol,
+                                 'reps': atom.flags,
+                                 'color': atom.color_code,
+                                 'segi': atom.segi}
+                                for atom in pymol.cmd.get_model(obj_name)]
                         """
-                        This secion has an issue with the alibi transformation.
-                        The coordinate vectors need to be moved by the camera movement probably.
-                        """
-                        objfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse','.obj'))
-                        self.pymol.cmd.save(objfile)
-                        self.custom_mesh = PyMolTranspiler.convert_mesh(open(objfile,'r'))
-                        os.remove(objfile)
+                        myspace = {'data': []}  # myspace['data'] is the same as self.atoms
+                        pymol.cmd.iterate(obj_name, self._iterate_cmd, space=myspace)
+                        self.convert_representation(myspace['data'], **settings)
+                        self.stick_transparency = float(pymol.cmd.get('stick_transparency'))
+                        self.surface_transparency = float(pymol.cmd.get('transparency'))
+                        self.cartoon_transparency = float(pymol.cmd.get('cartoon_transparency'))
+                        self.sphere_transparency = float(pymol.cmd.get('sphere_transparency'))
+                        self.ribbon_transparency = float(pymol.cmd.get('ribbon_transparency'))
+                        self.fov = float(pymol.cmd.get("field_of_view"))
+                        self.fog = float(pymol.cmd.get("fog_start"))*100
+                        self.parse_ss(myspace['data'])
+                        names_not_mesh.append(obj_name)
+                elif obj[4] == 2: #object:map
+                    names_for_mesh_route.append(obj_name)
+                elif obj[4] == 3: #object:mesh
+                    names_for_mesh_route.append(obj_name)
+                elif obj[4] == 4: #'object:measurement'
+                    if obj[2] == 0: # PyMOL disabled
+                        if skip_disabled:
+                            names_not_mesh.append(obj_name)
+                        else:
+                            raise NotImplementedError()
                     else:
-                        self.log(f'[JOB={self.job}] WARNING! Conversion of meshes disabled for now.')
-            if view:
-                self.convert_view(view)
-                self.log(f'[JOB={self.job}] View converted.')
-            if representation:
-                self.convert_representation(representation, **settings)
-                self.log(f'[JOB={self.job}] Reps converted.')
-            return self
+                        list_of_coordinates = obj[5][2][0][1]
+                        current_distances = []
+                        for pi in range(0, len(list_of_coordinates), 6):
+                            coord_A = list_of_coordinates[pi:pi + 3]
+                            coord_B = list_of_coordinates[pi + 3:pi + 6]
+                            current_distances.append({'atom_A': self.get_atom_id_of_coords(coord_A),
+                                                      'atom_B': self.get_atom_id_of_coords(coord_B)})
+                        self.distances.append({'pairs': current_distances, 'color': obj[5][0][2]})
+                elif obj[4] == 5: # no idea
+                    continue
+                elif obj[4] == 6: #object:cgo
+                    names_for_mesh_route.append(obj_name)
+                elif obj[4] == 7: #object:surface
+                    names_for_mesh_route.append(obj_name)
+                elif obj[4] == 12: # object:group
+                    continue
+            self.log(f'[JOB={self.job}] Reps converted.')
+            pdbfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse','.pdb'))
+            pymol.cmd.save(pdbfile)
+            self.describe()
+            pymol.cmd.delete('all')
+            if names_for_mesh_route:
+                if 1==0: ##TODO reimplement
+                    """
+                    This secion has an issue with the alibi transformation.
+                    The coordinate vectors need to be moved by the camera movement probably.
+                    """
+                    objfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse','.obj'))
+                    pymol.cmd.save(objfile)
+                    self.custom_mesh = PyMolTranspiler.convert_mesh(open(objfile,'r'))
+                    os.remove(objfile)
+                else:
+                    self.log(f'[JOB={self.job}] WARNING! Conversion of meshes disabled for now.')
+        if view:
+            self.convert_view(view)
+            self.log(f'[JOB={self.job}] View converted.')
+        if representation:
+            self.convert_representation(representation, **settings)
+            self.log(f'[JOB={self.job}] Reps converted.')
+        return self
 
     def describe(self) -> Dict:
         """
         determine how and what the chains are labelled and what are their ranges.
         ``{'peptide': [f'{first_resi}-{last_resi}:{chain}', ..], 'hetero': [f'[{resn}]{resi}:{chain}', ..]}``
-
         :rtype: dict
-
-        **PyMOL session**: dependent.
         """
         first_resi = defaultdict(lambda: 9999)
         last_resi = defaultdict(lambda: -9999)
         heteros = set()
-        for on in self.pymol.cmd.get_names(enabled_only=1): #pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
-            if self.pymol.cmd.get_type(on) == 'object:molecule':
-                o = self.pymol.cmd.get_model(on)
+        for on in pymol.cmd.get_names(enabled_only=1): #pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
+            if pymol.cmd.get_type(on) == 'object:molecule':
+                o = pymol.cmd.get_model(on)
                 if o:
                     for at in o.atom:
                         if not at.hetatm:
@@ -757,18 +756,16 @@ class PyMolTranspiler:
         self.log(f'[JOB={self.job}] description generated.')
         return self.description
 
-    def get_atom_id_of_coords(self, coord):
+    @classmethod
+    def get_atom_id_of_coords(cls, coord):
         """
         Returns the pymol atom object correspondng to coord. "Needed" for distance.
-
         :param coord: [x, y, z] vector
         :return: atom
-
-        **PyMOL session**: dependent.
         """
-        for on in self.pymol.cmd.get_names(enabled_only=1): #self.pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
-            if self.pymol.cmd.get_type(on) == 'object:molecule':
-                o = self.pymol.cmd.get_model(on)
+        for on in pymol.cmd.get_names(enabled_only=1): #pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
+            if pymol.cmd.get_type(on) == 'object:molecule':
+                o = pymol.cmd.get_model(on)
                 if o:
                     for atom in o.atom:
                         if all([atom.coord[i] == c for i,c in enumerate(coord)]):
@@ -778,125 +775,120 @@ class PyMolTranspiler:
 
     @classmethod
     def log(cls, msg):
-        if cls.verbose:
-            print(f'DEBUG {msg}')
+        print(f'DEBUG {msg}')
         cls.current_task = f'[{datetime.utcnow()} GMT] {msg}'
 
-    def load_pdb(self, file, outfile=None, mod_fx=None):
+
+    @classmethod
+    @PyMolTranspilerDeco
+    def load_pdb(cls, file, outfile=None, mod_fx=None):
         """
         Loads a pdb file into a transpiler obj. and fixes it.
         The round trip is to prevent anything malicious being sent.
-
         :param file: str file name
         :return: self
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
-            self.pymol.cmd.load(file)
-            extension = file.split('.')[-1]
-            headers = []
-            gather_ss = True
-            if extension == 'pdb':
-                with open(file) as w:
-                    headers = [row.replace('"','').replace("'",'').replace("\\",'') for row in w if any([k in row for k in ('LINK', 'HELIX', 'SHEET')])]
-                    if any(['HELIX', 'SHEET' in headers]):
-                        gather_ss = False
-                if outfile is None:
-                    outfile = file
-            else:
-                if outfile is None:
-                    outfile = '.'.join(file.split('.')[:-1])+'.pdb'
-            if mod_fx:
-                mod_fx()
-            self.pymol.cmd.save(outfile, format='pdb')
-            with open(outfile) as w:
-                self.raw_pdb = ''.join([row for row in w if 'ANISOU' not in row])
-            ## fix the segi and multiple object problem.
-            self.fix_structure()
-            ## add SS
-            if gather_ss:
-                myspace = {'data': []}
-                # myspace['data'] is the same as self.atoms, which is "kind of the same" as pymol.cmd.get_model('..').atoms
-                self.pymol.cmd.iterate('all', self._iterate_cmd, space=myspace)
-                self.parse_ss(myspace['data'])
-                self.raw_pdb = '\n'.join(self.ss)+self.raw_pdb
-            else:
-                self.raw_pdb = '\n'.join(headers)+self.raw_pdb
-            return self
+        self = cls(run_analysis=False) #this is so badly done.
+        pymol.cmd.load(file)
+        extension = file.split('.')[-1]
+        headers = []
+        gather_ss = True
+        if extension == 'pdb':
+            with open(file) as w:
+                headers = [row.replace('"','').replace("'",'').replace("\\",'') for row in w if any([k in row for k in ('LINK', 'HELIX', 'SHEET')])]
+                if any(['HELIX', 'SHEET' in headers]):
+                    gather_ss = False
+            if outfile is None:
+                outfile = file
+        else:
+            if outfile is None:
+                outfile = '.'.join(file.split('.')[:-1])+'.pdb'
+        if mod_fx:
+            mod_fx()
+        pymol.cmd.save(outfile, format='pdb')
+        with open(outfile) as w:
+            self.raw_pdb = ''.join([row for row in w if 'ANISOU' not in row])
+        ## fix the segi and multiple object problem.
+        self.fix_structure()
+        ## add SS
+        if gather_ss:
+            myspace = {'data': []}
+            # myspace['data'] is the same as self.atoms, which is "kind of the same" as pymol.cmd.get_model('..').atoms
+            pymol.cmd.iterate('all', self._iterate_cmd, space=myspace)
+            self.parse_ss(myspace['data'])
+            self.raw_pdb = '\n'.join(self.ss)+self.raw_pdb
+        else:
+            self.raw_pdb = '\n'.join(headers)+self.raw_pdb
+        return self
 
-    def renumber(self, pdb:str, definitions:List):
+
+
+    @classmethod
+    @PyMolTranspilerDeco
+    def renumber(cls, pdb, definitions):
         """
         Fetches a pdb file into a transpiler obj.
-
         :param file: str file name
-        :param definitions: Structure.chain_definitions e.g. [{'chain': 'A', 'uniprot': 'Q9BZ29', 'x': 1605, 'y': 2069, 'offset': 1604, 'range': '1605-2069', 'name': None, 'description': None},
+        :param definitions: Structure.chain_definitions
+        [{'chain': 'A', 'uniprot': 'Q9BZ29', 'x': 1605, 'y': 2069, 'offset': 1604, 'range': '1605-2069', 'name': None, 'description': None},
         :return: self
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
-            file = os.path.join('michelanglo_app', 'temp', pdb.lower()+'.pdb')
-            for chain in definitions:
-                print(chain)
-                if chain["offset"] != 0:
-                    self.pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
-            self.fix_structure()
-            self.parse_ss()
-            self.pymol.cmd.sort()
-            self.pymol.cmd.save(file)
-            with open(file) as w:
-                self.raw_pdb = w.read()
-            os.remove(file)
-            return self
+        self = cls(run_analysis=False) #this is so badly done.
+        pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
+        file = os.path.join('michelanglo_app', 'temp', pdb.lower()+'.pdb')
+        for chain in definitions:
+            print(chain)
+            if chain["offset"] != 0:
+                pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
+        self.fix_structure()
+        self.parse_ss()
+        pymol.cmd.sort()
+        pymol.cmd.save(file)
+        with open(file) as w:
+            self.raw_pdb = w.read()
+        os.remove(file)
+        return self
 
-    def sdf_to_pdb(self, infile: str, reffile: str) -> str:
+    @classmethod
+    @PyMolTranspilerDeco
+    def sdf_to_pdb(cls, infile: str, reffile: str) -> str:
         """
         A special class method to convert a sdf to pdb but with the atom index shifted so that the pdb can be cat'ed.
-
         :param infile: sdf file
         :param reffile: pdb file for the indices.
         :return: PDB block
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            combofile = infile.replace('.sdf', '_combo.pdb')
-            minusfile = infile.replace('.sdf', '_ref.pdb')
-            self.pymol.cmd.load(infile, 'ligand')
-            self.pymol.cmd.alter('all', 'chain="Z"')
-            self.pymol.cmd.load(reffile, 'apo')
-            self.pymol.cmd.alter('all','segi=""')
-            self.pymol.cmd.sort()
-            self.pymol.cmd.create('combo','apo or ligand')
-            self.pymol.cmd.save(combofile, 'combo')
-            self.pymol.cmd.save(minusfile, 'apo')
-            with open(minusfile) as fh:
-                ref = fh.readlines()
-            with open(combofile) as fh:
-                combo = fh.readlines()
-            ligand = ''.join([line for line in combo if line not in ref and line.strip() != ''])
-            os.remove(combofile)
-            os.remove(minusfile)
-            return ligand
+        combofile = infile.replace('.sdf', '_combo.pdb')
+        minusfile = infile.replace('.sdf', '_ref.pdb')
+        pymol.cmd.load(infile, 'ligand')
+        pymol.cmd.alter('all', 'chain="Z"')
+        pymol.cmd.load(reffile, 'apo')
+        pymol.cmd.alter('all','segi=""')
+        pymol.cmd.sort()
+        pymol.cmd.create('combo','apo or ligand')
+        pymol.cmd.save(combofile, 'combo')
+        pymol.cmd.save(minusfile, 'apo')
+        with open(minusfile) as fh:
+            ref = fh.readlines()
+        with open(combofile) as fh:
+            combo = fh.readlines()
+        ligand = ''.join([line for line in combo if line not in ref and line.strip() != ''])
+        os.remove(combofile)
+        os.remove(minusfile)
+        return ligand
 
-    def _mutagen(self, outfile:str, mutations:List, chain:str) -> None:
+
+    @staticmethod
+    def _mutagen(outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
-
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
         :return: None
-
-        **PyMOL session**: dependent.
         """
-        self.pymol.cmd.wizard("mutagenesis")
-        self.pymol.cmd.do("refresh_wizard")
+        pymol.cmd.wizard("mutagenesis")
+        pymol.cmd.do("refresh_wizard")
         for mutant in mutations:
             mutant = mutant.replace('p.','').strip()
             n = re.search("(\d+)", mutant).group(1)
@@ -908,17 +900,19 @@ class PyMolTranspiler:
                 raise ValueError(f'{mutant} is not a valid mutation. It should be like A123W')
             print('f looks like ',f)
             print('sele ',f"{chain}/{n}/")
-            self.pymol.cmd.get_wizard().set_mode(f)
-            self.pymol.cmd.get_wizard().do_select(f"{chain}/{n}/")
-            self.pymol.cmd.get_wizard().apply()
-            #m = self.pymol.cmd.get_model(f"resi {n} and name CA").atom
+            pymol.cmd.get_wizard().set_mode(f)
+            pymol.cmd.get_wizard().do_select(f"{chain}/{n}/")
+            pymol.cmd.get_wizard().apply()
+            #m = pymol.cmd.get_model(f"resi {n} and name CA").atom
             #if m:
             #    pass
             #    # assert f == m[0].resn, f'Something is not right {r} has a {m[0].atom}'
-        self.pymol.cmd.save(outfile)
-        self.pymol.cmd.delete('all')
+        pymol.cmd.save(outfile)
+        pymol.cmd.delete('all')
 
-    def mutate_code(self, code, outfile, mutations, chain):
+    @classmethod
+    @PyMolTranspilerDeco
+    def mutate_code(cls, code, outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
         :param code: str pdb code.
@@ -926,35 +920,29 @@ class PyMolTranspiler:
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
         :return:
-
-
-        **PyMOL session**: self-contained.
         """
-        with GlobalPyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.fetch(code)
-            self._mutagen(outfile, mutations, chain)
+        pymol.cmd.fetch(code)
+        cls._mutagen(outfile, mutations, chain)
         return 1
 
-    def mutate_file(self, infile:str, outfile:str, mutations:List[str], chain:str):
+    @classmethod
+    @PyMolTranspilerDeco
+    def mutate_file(cls, infile, outfile, mutations, chain):
         """
         Create a mutant protein based on a list of mutations on a PDB file path.
-
         :param infile: str
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
         :return:
-
-        **PyMOL session**: self-contained.
         """
-        with GlobalPyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.load(infile)
-            self._mutagen(outfile, mutations, chain)
+        pymol.cmd.load(infile)
+        cls._mutagen(outfile, mutations, chain)
         return 1
 
-    def dehydrate_code(self, code:str, outfile:str, water=False, ligand=False):
+    @classmethod
+    @PyMolTranspilerDeco
+    def dehydrate_code(cls, code, outfile, water=False, ligand=False):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
         :param code: str pdb code.
@@ -962,96 +950,81 @@ class PyMolTranspiler:
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
         :return:
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.fetch(code)
-            if water:
-                self.pymol.cmd.remove('solvent')
-            if ligand:
-                self.pymol.cmd.remove(' or '.join([f'resn {l}' for l in self.boring_ligand]))
-            self.pymol.cmd.save(outfile)
-            self.pymol.cmd.delete('all')
+        pymol.cmd.fetch(code)
+        if water:
+            pymol.cmd.remove('solvent')
+        if ligand:
+            pymol.cmd.remove(' or '.join([f'resn {l}' for l in cls.boring_ligand]))
+        pymol.cmd.save(outfile)
+        pymol.cmd.delete('all')
         return 1
 
-    def dehydrate_file(self, infile:str, outfile:str, water=False, ligand=False):
+    @classmethod
+    @PyMolTranspilerDeco
+    def dehydrate_file(cls, infile, outfile, water=False, ligand=False):
         """
         Create a mutant protein based on a list of mutations on a PDB file path.
-
         :param infile: str
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
         :return:
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.load(infile)
-            if water:
-                self.pymol.cmd.remove('solvent')
-            if ligand:
-                self.pymol.cmd.remove(' or '.join([f'resn {l}' for l in self.boring_ligand]))
-            self.pymol.cmd.save(outfile)
-            self.pymol.cmd.delete('all')
+        pymol.cmd.load(infile)
+        if water:
+            pymol.cmd.remove('solvent')
+        if ligand:
+            pymol.cmd.remove(' or '.join([f'resn {l}' for l in cls.boring_ligand]))
+        pymol.cmd.save(outfile)
+        pymol.cmd.delete('all')
         return 1
 
-    def _chain_removal(self, outfile, chains):
+    @staticmethod
+    def _chain_removal(outfile, chains):
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
-
         :param outfile: str the file to save the mod as.
         :param chains: list str chain id in the pdb loaded.
         :return: None
-
-        **PyMOL session**: dependent
         """
         for chain in chains:
-            self.pymol.cmd.remove(f'chain {chain}')
-        self.pymol.cmd.save(outfile)
-        self.pymol.cmd.delete('all')
+            pymol.cmd.remove(f'chain {chain}')
+        pymol.cmd.save(outfile)
+        pymol.cmd.delete('all')
 
-    def chain_removal_code(self, code, outfile, chains):
+    @classmethod
+    @PyMolTranspilerDeco
+    def chain_removal_code(cls, code, outfile, chains):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
         :param code: str pdb code.
         :param outfile: str the file to save the mod as.
         :param chains: list of str chain id in the pdb loaded.
         :return:
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.fetch(code)
-            self._chain_removal(outfile, chains)
+        pymol.cmd.fetch(code)
+        cls._chain_removal(outfile, chains)
         return 1
 
-    def chain_removal_file(self, infile, outfile, chains):
+    @classmethod
+    @PyMolTranspilerDeco
+    def chain_removal_file(cls, infile, outfile, chains):
         """
         Create a mutant protein based on a list of mutations on a PDB file path.
         :param infile: str
         :param outfile: str the file to save the mod as.
         :param chains: lsit of str chain id in the pdb loaded.
         :return:
-
-        **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.load(infile)
-            self._chain_removal(outfile, chains)
+        pymol.cmd.load(infile)
+        cls._chain_removal(outfile, chains)
         return 1
 
     def fix_structure(self):
         """
-        Fix any issues with structure. see self.pymol_model_chain_segi.md for more.
+        Fix any issues with structure. see pymol_model_chain_segi.md for more.
         empty chain issue.
-
-        **PyMOL session**: dependent
         """
         # This really ought to a class and this half-breed. But get new letter returns a letter not in old_chains
         old_chains = list()
@@ -1067,40 +1040,37 @@ class PyMolTranspiler:
         # whereas a chain can be called ?, it causes problems. So these are strictly JS \w characters.
         # Only latin-1 is okay in NGL. Any character above U+00FF will be rendered as the last two bytes. (U+01FF will be U+00FF say)
         #non-ascii are not okay in PyMol
-        for on in self.pymol.cmd.get_names(enabled_only=1):
-            # self.pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
-            if self.pymol.cmd.get_type(on) == 'object:molecule':
-                o = self.pymol.cmd.get_model(on)
+        for on in pymol.cmd.get_names(enabled_only=1):
+            # pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
+            if pymol.cmd.get_type(on) == 'object:molecule':
+                o = pymol.cmd.get_model(on)
                 if o:
                     chains = set([atom.chain for atom in o.atom])
                     for c in chains:
                         if not c: # missing chain ID is still causing issues.
                             new_chain = get_new_letter(possible)
-                            self.pymol.cmd.alter(f"{on} and chain ''", f'chain="{new_chain}"')
+                            pymol.cmd.alter(f"{on} and chain ''", f'chain="{new_chain}"')
                         elif c in old_chains:
                             new_chain = get_new_letter(possible)
-                            self.pymol.cmd.alter(f"{on} and chain {c}", f'chain="{new_chain}"')
+                            pymol.cmd.alter(f"{on} and chain {c}", f'chain="{new_chain}"')
                         else:
                             old_chains.append(c)
-        self.pymol.cmd.alter("all", "segi=''") # not needed. NGL does not recognise segi. Currently writtten to ignore it.
-        self.pymol.cmd.sort('all')
-        # The delete states shortcut does not work:
-        self.pymol.cmd.create('mike_combined','enabled',1) #the 1 means that only the first "state" = model is used.
-        for on in self.pymol.cmd.get_names_of_type('object:molecule'):
+        pymol.cmd.alter("all", "segi=''") # not needed. NGL does not recognise segi. Currently writtten to ignore it.
+        pymol.cmd.sort('all')
+        pymol.cmd.create('mike_combined','enabled',1) #the 1 means that only the first "state" = model is used.
+        for on in pymol.cmd.get_names_of_type('object:molecule'):
             if on != 'mike_combined':
-                self.pymol.cmd.delete(on)
+                pymol.cmd.delete(on)
 
     def convert_view(self, view, **settings):
         """
         Converts a Pymol `get_view` output to a NGL M4 matrix.
         If the output is set to string, the string will be a JS command that will require the object stage to exist.
         fog and alpha not implemented.
-        self.pymol.cmd.get("field_of_view"))
-        self.pymol.cmd.get("fog_start")
+        pymol.cmd.get("field_of_view"))
+        pymol.cmd.get("fog_start")
         :param view: str or tuple
         :return: np 4x4 matrix or a NGL string
-
-        **PyMOL session**: independent.
         """
         if isinstance(view, str):
             pymolian = np.array([float(i.replace('\\', '').replace(',', '')) for i in view.split() if i.find('.') > 0])  # isnumber is for ints
@@ -1131,11 +1101,8 @@ class PyMolTranspiler:
     def get_view(self, output='matrix', **settings):
         """
         If the output is set to string, the string will be a JS command that will require the object stage to exist.
-
         :param output: 'matrix' | 'string'
         :return: np 4x4 matrix or a NGL string
-
-        **PyMOL session**: independent.
         """
         warn('This method will be removed soon.',DeprecationWarning)
         assert self.m4 is not None, 'Cannot call get_view without having loaded the data with `convert_view(text)` or loaded a 4x4 transformation matrix (`.m4 =`)'
@@ -1147,13 +1114,10 @@ class PyMolTranspiler:
     def convert_representation(self, represenation, **settings):
         """iterate all, ID, segi, chain,resi, resn,name, elem,reps, color, ss
         reps seems to be a binary number. controlling the following
-
         * 0th bit: sticks
         * 7th bit: line
         * 5th bit: cartoon
         * 2th bit: surface
-
-        **PyMOL session**: independent.
         """
         if isinstance(represenation,str):
             text=represenation
@@ -1382,7 +1346,7 @@ class PyMolTranspiler:
         self.ss = []
         if data is None:
             myspace = {'data': []}
-            self.pymol.cmd.iterate('all', self._iterate_cmd, space=myspace)
+            pymol.cmd.iterate('all', self._iterate_cmd, space=myspace)
             data = myspace['data']
         ss_last = 'L'
         resi_start = '0'
@@ -1453,14 +1417,11 @@ class PyMolTranspiler:
         Given a fh or iterable of strings, return a mesh, with optional transformations.
         Note color will be lost.
         Only accepts trianglular meshes!
-
         :param fh: file handle
         :param scale: 0 do nothing. else Angstrom size
         :param centroid_mode: unaltered | origin | center
         :param origin: if centroid_mode is origin get given a 3d vector.
         :return: {'o_name': object_name, 'triangles': mesh triangles}
-
-        **PyMOL session**: independent. hence why it is a class method.
         """
         mesh = []
         o_name = ''
@@ -1514,3 +1475,50 @@ class PyMolTranspiler:
                      for ax in range(3)])
         mesh.append({'o_name': o_name, 'triangles': trilist})
         return mesh
+
+def test():
+    transpiler = PyMolTranspiler(verbose=True, validation=False)
+    transpiler.pdb = '1UBQ'
+    view = ''
+    reps = ''
+    data = open(os.path.join('michelanglo_app','static','pymol_demo.txt')).read().split('PyMOL>')
+    for block in data:
+        if 'get_view' in block:
+            view = block
+        elif 'iterate' in block:  # strickly lowercase as it ends in *I*terate
+            reps = block
+        elif not block:
+            pass #empty line.
+        else:
+            warn('Unknown block: '+block)
+    transpiler.convert_view(view)
+    transpiler.convert_representation(reps)
+    code = transpiler.get_html(tabbed=0)  # ngl='ngl.js'
+    return transpiler
+
+def file_test():
+    transpiler = PyMolTranspiler(file='1gfl.pse')
+    print(transpiler.get_view())
+    print(transpiler.get_reps())
+    return transpiler
+
+def new_template_testing():
+    #transpiler = PyMolTranspiler(file='git_docs/images/1ubq.pse')
+    transpiler = test()
+    transpiler.pdb = '1UBQ'
+    transpiler.m4_alt = None
+    code=transpiler.get_js(toggle_fx=True, viewport='viewport', variants=[], save_button='save_button', backgroundColor='white',tag_wrapped=True)
+    transpiler.write_hmtl(template_file='test2.mako', output_file='example.html', code=code)
+
+if __name__ == "__main__":
+    ## ARGPARSER
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version=__version__)
+    parser.add_argument('--verbose', action='store_true', help='Runs giving details...')
+    args = parser.parse_args()
+    exit(0)
+
+    ## Tests
+    test()
+    file_test()
+    new_template_testing()
