@@ -224,7 +224,7 @@ class PyMolTranspiler:
                      ('deuterium', 5385, (0.8999999761581421, 0.8999999761581421, 0.8999999761581421)), ('lonepair', 5386, (0.5, 0.5, 0.5)),
                      ('pseudoatom', 5387, (0.8999999761581421, 0.8999999761581421, 0.8999999761581421))])
     _iterate_cmd = "data.append({'ID': ID,  'segi': segi, 'chain': chain, 'resi': resi, 'resn': resn, 'name':name, 'elem':elem, 'reps':reps, 'color':color, 'ss': ss, 'cartoon': cartoon, 'label': label, 'type': type})"
-    boring_ligand = ('WAT', 'HOH',  # `TP3` water is ambiguous and rare
+    boring_ligand = (#'WAT', 'HOH',  # `TP3` water is ambiguous and rare
                                                   'LI', 'NA' , 'K', 'RB',  # group 1 cations
                                                   'BE', 'MG', 'CA', 'SR',  # earth metal cations
                                                    'F', 'CL', 'BR', 'I',  #halogens
