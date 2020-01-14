@@ -17,7 +17,7 @@ __license__ = "Cite me!"
 __copyright__ = 'MIT' #not that I care.
 __version__ = "3"
 
-from typing import Sequence, Dict, List
+from typing import Sequence, Dict, List, Union, Set
 
 import os, re
 from copy import deepcopy
@@ -44,6 +44,7 @@ from threading import Lock
 class GlobalPyMOL(): #singleton but that waits for the other thread to release it.
     pymol = pymol2.SingletonPyMOL()
     pymol.start()
+    pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
     pylock = Lock()
 
     def __init__(self):
@@ -826,7 +827,7 @@ class PyMolTranspiler:
                 self.raw_pdb = '\n'.join(headers)+self.raw_pdb
             return self
 
-    def renumber(self, pdb:str, definitions:List):
+    def renumber(self, pdb:str, definitions:List, make_A:Union[str,None]=None):
         """
         Fetches a pdb file into a transpiler obj.
 
@@ -837,20 +838,25 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
-            self.pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
-            file = os.path.join('michelanglo_app', 'temp', pdb.lower()+'.pdb')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            if len(pdb) == 4:
+                self.pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
+            else:
+                self.pymol.cmd.read_pdbstr(pdb,'blockprotein')
+            file = os.path.join('michelanglo_app', 'temp', 'cccccccccccccccccc.pdb')
             for chain in definitions:
                 print(chain)
                 if chain["offset"] != 0:
                     self.pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
+            if make_A is not None or make_A != 'A':
+                self.pymol.cmd.alter('chain A', 'chain ="XXX"')
+                self.pymol.cmd.alter(f'chain {make_A}', 'chain ="A"')
+                self.pymol.cmd.alter('chain XXX', f'chain ="{make_A}"')
+                self.pymol.cmd.sort()
             self.fix_structure()
-            self.parse_ss()
             self.pymol.cmd.sort()
-            self.pymol.cmd.save(file)
-            with open(file) as w:
-                self.raw_pdb = w.read()
-            os.remove(file)
+            self.parse_ss()
+            self.raw_pdb = '\n'.join(self.ss) + self.pymol.cmd.get_pdbstr()
             return self
 
     def sdf_to_pdb(self, infile: str, reffile: str) -> str:
@@ -864,7 +870,7 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
             combofile = infile.replace('.sdf', '_combo.pdb')
             minusfile = infile.replace('.sdf', '_ref.pdb')
             self.pymol.cmd.load(infile, 'ligand')
@@ -906,8 +912,8 @@ class PyMolTranspiler:
                 f = p1to3[mutant[-1]].upper()
             else:
                 raise ValueError(f'{mutant} is not a valid mutation. It should be like A123W')
-            print('f looks like ',f)
-            print('sele ',f"{chain}/{n}/")
+            #print('f looks like ',f)
+            #print('sele ',f"{chain}/{n}/")
             self.pymol.cmd.get_wizard().set_mode(f)
             self.pymol.cmd.get_wizard().do_select(f"{chain}/{n}/")
             self.pymol.cmd.get_wizard().apply()
@@ -931,7 +937,6 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with GlobalPyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
             self.pymol.cmd.fetch(code)
             self._mutagen(outfile, mutations, chain)
         return 1
@@ -949,7 +954,6 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with GlobalPyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
             self.pymol.cmd.load(infile)
             self._mutagen(outfile, mutations, chain)
         return 1
@@ -966,7 +970,7 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
             self.pymol.cmd.fetch(code)
             if water:
                 self.pymol.cmd.remove('solvent')
@@ -989,7 +993,7 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
             self.pymol.cmd.load(infile)
             if water:
                 self.pymol.cmd.remove('solvent')
@@ -1025,7 +1029,7 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
             self.pymol.cmd.fetch(code)
             self._chain_removal(outfile, chains)
         return 1
@@ -1041,10 +1045,31 @@ class PyMolTranspiler:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', os.getcwd() + '/michelanglo_app/temp')
+            self.pymol.cmd.set('fetch_path', self.temp_folder)
             self.pymol.cmd.load(infile)
             self._chain_removal(outfile, chains)
         return 1
+
+    def get_chains(self, obj=None) -> Set:
+        chains = set()
+        if obj == None:
+            it = self.pymol.cmd.get_names(enabled_only=1)
+        else:
+            it = [obj]
+        for on in it:
+            if self.pymol.cmd.get_type(on) == 'object:molecule':
+                o = self.pymol.cmd.get_model(on)
+                if o:
+                    for atom in o.atom:
+                        chains.add(atom.chain)
+        return chains
+
+    def get_new_letter(self):
+        possible = iter('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz')
+        chains = self.get_chains()
+        for c in possible:
+            if c not in chains:
+                yield c
 
     def fix_structure(self):
         """
@@ -1053,35 +1078,23 @@ class PyMolTranspiler:
 
         **PyMOL session**: dependent
         """
-        # This really ought to a class and this half-breed. But get new letter returns a letter not in old_chains
-        old_chains = list()
-        possible = iter('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz')
-        def get_new_letter(possible):
-                           # 'ßÞÐÅÆØ' + 'ÀÁÂÃÄÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ' +
-                           # 'àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ')
-            new = next(possible)
-            while new in old_chains:
-                new = next(possible)
-            old_chains.append(new)
-            return new
+
         # whereas a chain can be called ?, it causes problems. So these are strictly JS \w characters.
         # Only latin-1 is okay in NGL. Any character above U+00FF will be rendered as the last two bytes. (U+01FF will be U+00FF say)
         #non-ascii are not okay in PyMol
-        for on in self.pymol.cmd.get_names(enabled_only=1):
-            # self.pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
-            if self.pymol.cmd.get_type(on) == 'object:molecule':
-                o = self.pymol.cmd.get_model(on)
-                if o:
-                    chains = set([atom.chain for atom in o.atom])
-                    for c in chains:
-                        if not c: # missing chain ID is still causing issues.
-                            new_chain = get_new_letter(possible)
-                            self.pymol.cmd.alter(f"{on} and chain ''", f'chain="{new_chain}"')
-                        elif c in old_chains:
-                            new_chain = get_new_letter(possible)
-                            self.pymol.cmd.alter(f"{on} and chain {c}", f'chain="{new_chain}"')
-                        else:
-                            old_chains.append(c)
+        chaingen = self.get_new_letter()
+        objs = self.pymol.cmd.get_names(enabled_only=1)
+        prime_chains = self.get_chains(objs[0])
+        for on in objs[1:]:
+            for c in self.get_chains(on):
+                if not c: # missing chain ID is still causing issues.
+                    new_chain = next(chaingen)
+                    self.pymol.cmd.alter(f"{on} and chain ''", f'chain="{new_chain}"')
+                elif c in prime_chains:
+                    new_chain = next(chaingen)
+                    self.pymol.cmd.alter(f"{on} and chain {c}", f'chain="{new_chain}"')
+                else:
+                    prime_chains.add(c)
         self.pymol.cmd.alter("all", "segi=''") # not needed. NGL does not recognise segi. Currently writtten to ignore it.
         self.pymol.cmd.sort('all')
         # The delete states shortcut does not work:
@@ -1349,7 +1362,7 @@ class PyMolTranspiler:
 
     def parse_ss(self, data=None, **settings):
         """
-        Secondary structure
+        PDB block Secondary structure maker
         """
         def _deal_with():
             if ss_last == 'H':  # previous was the other type
