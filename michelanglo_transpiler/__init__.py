@@ -529,6 +529,9 @@ class PyMolTranspiler:
                                                   'NRU',  # ruthenium (iii) hexaamine ion
                                                   '4MO'  # molybdenum(iv) ion
                       )
+    aa_ligand = ('ALA', 'CYS', 'ASP', 'GLU', 'PHE', 'GLY', 'HIS', 'ILE', 'LEU', 'LYS','MET', 'ASN', 'PRO', 'GLN', 'ARG', 'SER', 'THR', 'VAL', 'TRP', 'TYR')
+
+    water_ligand = ('HOH', 'WAT', 'TP3')
 
     def __init__(self, verbose=False, validation=False, pdb='', job='task'):
         """
@@ -594,7 +597,7 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
+        with GlobalPyMOL() as self.pymol: #fix structure requires signeton
             self.pymol.cmd.set('fetch_path', self.temp_folder)
             if file:
                 self.log(f'[JOB={self.job}] file {file}')
@@ -793,7 +796,7 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
+        with pymol2.PyMOL() as self.pymol: #pymol2.PyMOL()
             self.pymol.cmd.set('fetch_path', self.temp_folder)
             self.pymol.cmd.load(file)
             extension = file.split('.')[-1]
@@ -845,12 +848,15 @@ class PyMolTranspiler:
                 self.pymol.cmd.read_pdbstr(pdb,'blockprotein')
             file = os.path.join('michelanglo_app', 'temp', 'cccccccccccccccccc.pdb')
             for chain in definitions:
-                print(chain)
                 if chain["offset"] != 0:
-                    self.pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
+                    #print(f'chain {chain["chain"]}', f'resi=str(int(resi){chain["offset"]:+d})')
+                    self.pymol.cmd.alter(f'chain {chain["chain"]}', f'resv += {chain["offset"]}')
+                    self.pymol.cmd.sort()
             if make_A is not None or make_A != 'A':
                 self.pymol.cmd.alter('chain A', 'chain ="XXX"')
+                self.pymol.cmd.sort()
                 self.pymol.cmd.alter(f'chain {make_A}', 'chain ="A"')
+                self.pymol.cmd.sort()
                 self.pymol.cmd.alter('chain XXX', f'chain ="{make_A}"')
                 self.pymol.cmd.sort()
             self.fix_structure()
@@ -893,6 +899,7 @@ class PyMolTranspiler:
     def _mutagen(self, outfile:str, mutations:List, chain:str) -> None:
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
+        To use the pymol2 module it uses https://github.com/schrodinger/pymol-open-source/issues/76
 
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
@@ -901,7 +908,7 @@ class PyMolTranspiler:
 
         **PyMOL session**: dependent.
         """
-        self.pymol.cmd.wizard("mutagenesis")
+        self.pymol.cmd.wizard("mutagenesis", _self=self.pymol.cmd)
         self.pymol.cmd.do("refresh_wizard")
         for mutant in mutations:
             mutant = mutant.replace('p.','').strip()
@@ -915,14 +922,15 @@ class PyMolTranspiler:
             #print('f looks like ',f)
             #print('sele ',f"{chain}/{n}/")
             self.pymol.cmd.get_wizard().set_mode(f)
-            self.pymol.cmd.get_wizard().do_select(f"{chain}/{n}/")
+            try:
+                self.pymol.cmd.get_wizard().do_select(f"{chain}/{n}/")
+            except self.pymol.parsing.QuietException: #color. cf. https://github.com/schrodinger/pymol-open-source/issues/76
+                pass
             self.pymol.cmd.get_wizard().apply()
             #m = self.pymol.cmd.get_model(f"resi {n} and name CA").atom
             #if m:
             #    pass
             #    # assert f == m[0].resn, f'Something is not right {r} has a {m[0].atom}'
-        self.pymol.cmd.save(outfile)
-        self.pymol.cmd.delete('all')
 
     def mutate_code(self, code, outfile, mutations, chain):
         """
@@ -936,9 +944,11 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with GlobalPyMOL() as self.pymol:
+        with pymol2.PyMOL() as self.pymol:
             self.pymol.cmd.fetch(code)
             self._mutagen(outfile, mutations, chain)
+            self.pymol.cmd.save(outfile)
+            self.pymol.cmd.delete('all')
         return 1
 
     def mutate_file(self, infile:str, outfile:str, mutations:List[str], chain:str):
@@ -953,9 +963,11 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with GlobalPyMOL() as self.pymol:
+        with pymol2.PyMOL() as self.pymol:
             self.pymol.cmd.load(infile)
             self._mutagen(outfile, mutations, chain)
+            self.pymol.cmd.save(outfile)
+            self.pymol.cmd.delete('all')
         return 1
 
     def dehydrate_code(self, code:str, outfile:str, water=False, ligand=False):
@@ -1076,7 +1088,7 @@ class PyMolTranspiler:
         Fix any issues with structure. see self.pymol_model_chain_segi.md for more.
         empty chain issue.
 
-        **PyMOL session**: dependent
+        **PyMOL session**: dependent. Requires sigleton.
         """
 
         # whereas a chain can be called ?, it causes problems. So these are strictly JS \w characters.
@@ -1275,7 +1287,6 @@ class PyMolTranspiler:
             return l
         parts = []
         start = l[0]
-        print(l)
         for i in range(1, len(l)):
             fore = int(l[i - 1])
             aft = int(l[i])

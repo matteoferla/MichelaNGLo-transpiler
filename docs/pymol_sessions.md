@@ -131,8 +131,8 @@ There was a modest creep in used memory, which is probably just the garbage coll
 
 ## Wizard
 
-One issue is that the `wizard` does not work with `cmd2` (`cmd` attribute of `pymol2`), which I found out too late. Luckily, the solution is simple,
-making a class for the contextmanager that uses Singleton and waits (cf. the two mutagenesis methods)
+(One issue)[https://github.com/schrodinger/pymol-open-source/issues/76] is that the `wizard` did not work with `cmd2` (`cmd` attribute of `pymol2`), which I found out too late. Luckily, the solution is simple,
+making a class for the contextmanager that uses Singleton and waits (_cf._ the two mutagenesis methods).
 
     class GlobalPyMOL(): #singleton but that waits for the other thread to release it.
         pymol = pymol2.SingletonPyMOL()
@@ -158,6 +158,8 @@ making a class for the contextmanager that uses Singleton and waits (cf. the two
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.pymol.cmd.delete('*')
             self.pylock.release()
+
+Subsequently, the issue is solved with a workaround for both wizard and alter.
 
 ## Huston, we have a problem...
 
