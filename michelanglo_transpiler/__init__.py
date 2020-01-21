@@ -400,7 +400,6 @@ class PyMolTranspiler:
                                                   #'NDP',  # nadph dihydro-nicotinamide-adenine-dinucleotide phosphate
                                                   'NBZ',  # nitrobenzene
                                                   'ETI',  # iodoethane
-                                                  'SER',  # serine
                                                   'C2C',  # cu-cl-cu linkage
                                                   'NA',  # sodium ion
                                                   'FMT',  # formic acid
@@ -729,6 +728,10 @@ class PyMolTranspiler:
                 self.log(f'[JOB={self.job}] Reps converted.')
             return self
 
+    @staticmethod
+    def remove_anisou(block):
+        return '\n'.join([r for r in block.split('\n') if 'ANISOU' not in r])
+
     def describe(self) -> Dict:
         """
         determine how and what the chains are labelled and what are their ranges.
@@ -814,9 +817,7 @@ class PyMolTranspiler:
                     outfile = '.'.join(file.split('.')[:-1])+'.pdb'
             if mod_fx:
                 mod_fx()
-            self.pymol.cmd.save(outfile, format='pdb')
-            with open(outfile) as w:
-                self.raw_pdb = ''.join([row for row in w if 'ANISOU' not in row])
+            self.raw_pdb = self.remove_anisou(self.pymol.cmd.get_pdbstr())
             ## fix the segi and multiple object problem.
             self.fix_structure()
             ## add SS
@@ -825,9 +826,9 @@ class PyMolTranspiler:
                 # myspace['data'] is the same as self.atoms, which is "kind of the same" as pymol.cmd.get_model('..').atoms
                 self.pymol.cmd.iterate('all', self._iterate_cmd, space=myspace)
                 self.parse_ss(myspace['data'])
-                self.raw_pdb = '\n'.join(self.ss)+self.raw_pdb
+                self.raw_pdb = '\n'.join(self.ss)+'\n'+ self.raw_pdb
             else:
-                self.raw_pdb = '\n'.join(headers)+self.raw_pdb
+                self.raw_pdb = '\n'.join(headers)+'\n'+ self.raw_pdb
             return self
 
     def renumber(self, pdb:str, definitions:List, make_A:Union[str,None]=None):
@@ -846,7 +847,6 @@ class PyMolTranspiler:
                 self.pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
             else:
                 self.pymol.cmd.read_pdbstr(pdb,'blockprotein')
-            file = os.path.join('michelanglo_app', 'temp', 'cccccccccccccccccc.pdb')
             for chain in definitions:
                 if chain["offset"] != 0:
                     #print(f'chain {chain["chain"]}', f'resi=str(int(resi){chain["offset"]:+d})')
@@ -862,7 +862,7 @@ class PyMolTranspiler:
             self.fix_structure()
             self.pymol.cmd.sort()
             self.parse_ss()
-            self.raw_pdb = '\n'.join(self.ss) + self.pymol.cmd.get_pdbstr()
+            self.raw_pdb = '\n'.join(self.ss) +'\n'+  self.remove_anisou(self.pymol.cmd.get_pdbstr())
             return self
 
     def sdf_to_pdb(self, infile: str, reffile: str) -> str:
@@ -896,7 +896,7 @@ class PyMolTranspiler:
             os.remove(minusfile)
             return ligand
 
-    def _mutagen(self, outfile:str, mutations:List, chain:str) -> None:
+    def _mutagen(self, outfile:str, mutations:List, chain: str = None, chains: List = None) -> None:
         """
         Create a mutant protein based on a list of mutations on the already loaded protein.
         To use the pymol2 module it uses https://github.com/schrodinger/pymol-open-source/issues/76
@@ -904,13 +904,17 @@ class PyMolTranspiler:
         :param outfile: str the file to save the mod as.
         :param mutations: list of string in the single letter format (A234P) without "p.".
         :param chain: str chain id in the pdb loaded.
+        :param chains: it must be same len as mutation.
         :return: None
 
         **PyMOL session**: dependent.
         """
         self.pymol.cmd.wizard("mutagenesis", _self=self.pymol.cmd)
         self.pymol.cmd.do("refresh_wizard")
-        for mutant in mutations:
+        print(mutations)
+        for i, mutant in enumerate(mutations):
+            if chains:
+                chain = chains[i]
             mutant = mutant.replace('p.','').strip()
             n = re.search("(\d+)", mutant).group(1)
             if re.match("\w{3}\d+\w{3}", mutant):  # 3 letter Arg
@@ -932,7 +936,7 @@ class PyMolTranspiler:
             #    pass
             #    # assert f == m[0].resn, f'Something is not right {r} has a {m[0].atom}'
 
-    def mutate_code(self, code, outfile, mutations, chain):
+    def mutate_code(self, code, outfile, mutations, chain=None, chains=None):
         """
         Create a mutant protein based on a list of mutations on a PDB code.
         :param code: str pdb code.
@@ -944,14 +948,14 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
+        with GlobalPyMOL() as self.pymol:
             self.pymol.cmd.fetch(code)
-            self._mutagen(outfile, mutations, chain)
+            self._mutagen(outfile, mutations, chain, chains)
             self.pymol.cmd.save(outfile)
             self.pymol.cmd.delete('all')
         return 1
 
-    def mutate_file(self, infile:str, outfile:str, mutations:List[str], chain:str):
+    def mutate_file(self, infile:str, outfile:str, mutations:List[str], chain:str=None, chains:List=None):
         """
         Create a mutant protein based on a list of mutations on a PDB file path.
 
@@ -963,9 +967,9 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with pymol2.PyMOL() as self.pymol:
+        with GlobalPyMOL() as self.pymol:
             self.pymol.cmd.load(infile)
-            self._mutagen(outfile, mutations, chain)
+            self._mutagen(outfile, mutations, chain, chains)
             self.pymol.cmd.save(outfile)
             self.pymol.cmd.delete('all')
         return 1
