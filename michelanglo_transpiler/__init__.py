@@ -1403,7 +1403,6 @@ class PyMolTranspiler:
         """
         self.pymol.cmd.wizard("mutagenesis", _self=self.pymol.cmd)
         self.pymol.cmd.do("refresh_wizard")
-        print(mutations)
         for i, mutant in enumerate(mutations):
             if chains:
                 chain = chains[i]
