@@ -58,7 +58,6 @@ class GlobalPyMOL(): #singleton but that waits for the other thread to release i
             self.pylock.release() #pointless roundtrip to be safe.
             self.pylock.acquire()
             return self.pymol
-
         else:
             self.pymol.cmd.delete('*')
             return self.pymol
@@ -67,6 +66,11 @@ class GlobalPyMOL(): #singleton but that waits for the other thread to release i
         self.pymol.cmd.delete('*')
         self.pylock.release()
 
+    def kill(self):
+        ## the assumption is that it died.
+        self.pymol.cmd.reinitialize() #dangerous for other threads.
+        if self.pylock.locked():
+            self.pylock.release()
 
 ###############################################################
 
@@ -120,7 +124,7 @@ class ColorSwatch:
         if int(index) in self._swatch:
             return self._swatch[int(index)]
         else:
-            warn(f'New color! {index}')
+            #warn(f'New color! {index}')
             ci = ColorItem(['', index, GlobalPyMOL.pymol.cmd.get_color_tuple(int(index))])
             self._swatch[ci.index] = ci
             return ci
@@ -597,7 +601,8 @@ class PyMolTranspiler:
 
         **PyMOL session**: self-contained.
         """
-        with GlobalPyMOL() as self.pymol: #fix structure requires signeton
+        with pymol2.PyMOL() as self.pymol:
+            #fix structure requires signeton
             self.pymol.cmd.set('fetch_path', self.temp_folder)
             if file:
                 self.log(f'[JOB={self.job}] file {file}')
