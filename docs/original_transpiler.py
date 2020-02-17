@@ -67,7 +67,12 @@ class ColorItem:
         self.name = value[0]
         self.index = value[1]
         self.rgb = value[2]
-        self.hex = "0x{0:02x}{1:02x}{2:02x}".format(int(value[2][0]*(2**8-1)),int(value[2][1]*(2**8-1)),int(value[2][2]*(2**8-1)))
+        try:
+            self.hex = "0x{0:02x}{1:02x}{2:02x}".format(int(value[2][0]*(2**8-1)),
+                                                        int(value[2][1]*(2**8-1)),
+                                                        int(value[2][2]*(2**8-1)))
+        except TypeError:
+            self.hex = "0xffffff"
 
 class ColorSwatch:
     def __init__(self, colors):
