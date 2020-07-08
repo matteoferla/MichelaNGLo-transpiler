@@ -116,10 +116,10 @@ class PyMolTranspiler_modifier:
             n = re.search("(\d+)", mutant).group(1)
             if re.match("\w{3}\d+\w{3}", mutant):  # 3 letter Arg
                 f = re.match("\w{3}\d+(\w{3})", mutant).group(1).upper()
-            elif re.match("\w{1}\d+\w{1}", mutant):  # 1 letter R
+            elif re.match("\w{1}\d+\w{1}", mutant) and mutant[-1] in p1to3:  # 1 letter R
                 f = p1to3[mutant[-1]].upper()
             else:
-                raise ValueError(f'{mutant} is not a valid mutation. It should be like A123W')
+                raise ValueError(f'{mutant} is not a valid mutation. It should be like A123W. Truncations not allowed.')
             #print('f looks like ',f)
             #print('sele ',f"{chain}/{n}/")
             self.pymol.cmd.get_wizard().set_mode(f)
