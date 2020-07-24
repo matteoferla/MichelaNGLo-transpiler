@@ -508,7 +508,10 @@ class PyMolTranspiler_base:
 
     water_ligand = ('HOH', 'WAT', 'TP3')
 
-    def __init__(self, verbose: bool = False, validation: bool = False, pdb: str = '', job: str = 'task'):
+    def __init__(self, verbose: bool = False,
+                 validation: bool = False,
+                 pdb: str = '',
+                 job: str = 'task'):
         """
         Converter. ``__init__`` does not interact with PyMOL.
 
@@ -524,7 +527,9 @@ class PyMolTranspiler_base:
         self.verbose = verbose
         self.validation = validation  # boolean for printing.
         self.validation_text = ''
-        self.pdb = pdb
+        self.pdb = pdb # False(/None?) or 4 letter code.
+        self.pdbblocks = {} # the pymol transpiler now uses this, but everything else does not.
+        self.loadfuns = {}
         self.rotation = None
         self.modrotation = None
         self.position = None

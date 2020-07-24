@@ -14,7 +14,7 @@ __citation__ = "Ferla et al. (2020) MichelaNGLo:  sculpting  protein  views on w
 ########################################################################################################################
 
 from typing import Sequence, Dict, List, Union, Set
-import os
+import os, re
 from copy import deepcopy
 from collections import defaultdict
 from warnings import warn
@@ -31,12 +31,21 @@ class PyMolTranspiler_PSE:
     ion_names = ('NA', 'MG', 'MN', 'FE', 'CO', '3CO', 'NI', 'NI1', 'NI2', 'CU', 'ZN', 'K', 'SO4', 'PO4', 'CL', 'F', 'BR')
     # The representation of non-bounded spheres appears a bit random
 
-    def transpile(self, file, view=None, representation=None, skip_disabled=True, **settings):
+    def transpile(self, file, view=None, representation=None, skip_disabled=True, combine_objects=True, **settings):
         """
         method that does the conversion of the PSE files.
+        Historically view and representation could be set manually. This is likely to not work.
+        And is simply a question of requiring the refactoring the code.
+
         For views see ``.convert_view(view_string)``, which processes the output of PyMOL command `set_view`
         For representation see ``.convert_reps(reps_string)``, which process the output of PyMOL command
         `iterate 1UBQ, print resi, resn,name,ID,reps`
+
+        Combine_objects...
+        This is a peculiar/backwards operation to accomodate the case where the objects are not to be merged.
+        Whereas normally raw_pdb and ss are str, here they will be dictionaries unfortunately.
+
+        The problem lies with skipping fix_structure() will result in multiple object:molecule
 
         **PyMOL session**: self-contained.
         """
@@ -52,12 +61,27 @@ class PyMolTranspiler_PSE:
                 v = self.pymol.cmd.get_view()
                 self.convert_view(v)
                 self.log(f'[JOB={self.job}] View converted.')
-                self.fix_structure()
+                if combine_objects:
+                    self.fix_structure()
                 self.log(f'[JOB={self.job}] Secondary structure fix applied.')
                 names_for_mesh_route = []  # this is for a last ditch attempt.
                 names_not_mesh = []
+                ## General settings
+                self.stick_transparency = float(self.pymol.cmd.get('stick_transparency'))
+                self.log(f'[JOB={self.job}] 1')
+                self.surface_transparency = float(self.pymol.cmd.get('transparency'))
+                self.log(f'[JOB={self.job}] 1')
+                self.cartoon_transparency = float(self.pymol.cmd.get('cartoon_transparency'))
+                self.log(f'[JOB={self.job}] 1')
+                self.sphere_transparency = float(self.pymol.cmd.get('sphere_transparency'))
+                self.log(f'[JOB={self.job}] 1')
+                self.ribbon_transparency = float(self.pymol.cmd.get('ribbon_transparency'))
+                self.log(f'[JOB={self.job}] 1')
+                self.fov = float(self.pymol.cmd.get("field_of_view"))
+                self.log(f'[JOB={self.job}] 1')
+                self.fog = float(self.pymol.cmd.get("fog_start")) * 100
+                self.log(f'[JOB={self.job}] 1')
                 ### sort the pymol objetcs into relevant methods
-
                 self.log(f'[JOB={self.job}] {self.pymol.cmd.get_names()}')
                 for obj_name in self.pymol.cmd.get_names():
                     obj = self.pymol.cmd.get_session(obj_name)['names'][0]
@@ -98,28 +122,21 @@ class PyMolTranspiler_PSE:
                                      'segi': atom.segi}
                                     for atom in pymol.cmd.get_model(obj_name)]
                             """
+                            # the object name will be the variable in JS storing the PDB.
+                            name = re.sub(r'[^\w_]', '', obj_name)
+                            if re.match(r'^\d', name):
+                                name = '_'+name
                             self.log(f'[JOB={self.job}] 1')
                             myspace = {'data': []}  # myspace['data'] is the same as self.atoms
                             self.pymol.cmd.iterate(obj_name, self._iterate_cmd, space=myspace)
                             self.log(f'[JOB={self.job}] iterate')
                             self.convert_representation(myspace['data'], **settings)
                             self.log(f'[JOB={self.job}] converted')
-                            self.stick_transparency = float(self.pymol.cmd.get('stick_transparency'))
+                            self.parse_ss(myspace['data']) # resets self.ss each time.
+                            # #TODO check if it can be changed to be self.ss = self.parse_ss
                             self.log(f'[JOB={self.job}] 1')
-                            self.surface_transparency = float(self.pymol.cmd.get('transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.cartoon_transparency = float(self.pymol.cmd.get('cartoon_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.sphere_transparency = float(self.pymol.cmd.get('sphere_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.ribbon_transparency = float(self.pymol.cmd.get('ribbon_transparency'))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.fov = float(self.pymol.cmd.get("field_of_view"))
-                            self.log(f'[JOB={self.job}] 1')
-                            self.fog = float(self.pymol.cmd.get("fog_start")) * 100
-                            self.log(f'[JOB={self.job}] 1')
-                            self.parse_ss(myspace['data'])
-                            self.log(f'[JOB={self.job}] 1')
+                            self.pdbblocks[name] = '\n'.join(self.ss)+'\n'+self.pymol.cmd.get_pdbstr(obj_name)
+                            self.loadfuns[name] = self.get_loadfun_js(tag_wrapped=True, funname=f'load{name}', **settings)
                             names_not_mesh.append(obj_name)
                     elif obj[4] == 2:  # object:map
                         names_for_mesh_route.append(obj_name)
@@ -149,8 +166,7 @@ class PyMolTranspiler_PSE:
                     elif obj[4] == 12:  # object:group
                         continue
                 self.log(f'[JOB={self.job}] Reps converted.')
-                pdbfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse', '.pdb'))
-                self.pymol.cmd.save(pdbfile)
+                # save and delete all
                 self.describe()
                 self.pymol.cmd.delete('all')
                 if names_for_mesh_route:
@@ -165,6 +181,7 @@ class PyMolTranspiler_PSE:
                         os.remove(objfile)
                     else:
                         self.log(f'[JOB={self.job}] WARNING! Conversion of meshes disabled for now.')
+            # LEGACY. Likely broken.
             if view:
                 self.convert_view(view)
                 self.log(f'[JOB={self.job}] View converted.')
