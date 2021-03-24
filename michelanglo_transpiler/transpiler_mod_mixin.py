@@ -37,6 +37,8 @@ class PyMolTranspiler_modifier:
 
         **PyMOL session**: self-contained.
         """
+        assert pdb is not None, 'No PDB block provided'
+        assert pdb != '', 'Blank PDB block provided'
         with pymol2.PyMOL() as self.pymol:
             self.pymol.cmd.set('fetch_path', self.temp_folder)
             if len(pdb) == 4: ##Is this block redundant?
