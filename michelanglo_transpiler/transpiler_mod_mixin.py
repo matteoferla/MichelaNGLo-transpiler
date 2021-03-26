@@ -27,7 +27,7 @@ from .locking_singleton_pymol import GlobalPyMOL
 
 class PyMolTranspiler_modifier:
 
-    def renumber(self, pdb:str, definitions:List, make_A:Union[str,None]=None):
+    def renumber(self, pdb:str, definitions:List, make_A:Union[str,None]=None, remove_solvent:bool=True):
         """
         Fetches a pdb file into a transpiler obj.
 
@@ -50,6 +50,8 @@ class PyMolTranspiler_modifier:
                     #print(f'chain {chain["chain"]}', f'resi=str(int(resi){chain["offset"]:+d})')
                     self.pymol.cmd.alter(f'chain {chain["chain"]}', f'resv += {chain["offset"]}')
                     self.pymol.cmd.sort()
+            if remove_solvent:
+                self.pymol.cmd.remove('solvent')
             if make_A is not None and make_A != 'A':
                 self.pymol.cmd.alter('chain A', 'chain ="XXX"')
                 self.pymol.cmd.sort()
