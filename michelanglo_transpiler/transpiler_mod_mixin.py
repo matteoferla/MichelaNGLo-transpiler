@@ -13,7 +13,7 @@ __citation__ = "Ferla et al. (2020) MichelaNGLo:  sculpting  protein  views on w
 
 ########################################################################################################################
 
-from typing import Sequence, Dict, List, Union, Set
+from typing import *
 import os, re
 import pymol2
 from Bio.Data.IUPACData import protein_letters_1to3 as p1to3
@@ -27,9 +27,15 @@ from .locking_singleton_pymol import GlobalPyMOL
 
 class PyMolTranspiler_modifier:
 
-    def renumber(self, pdb:str, definitions:List, make_A:Union[str,None]=None, remove_solvent:bool=True):
+    def renumber(self,
+                 pdb:str,
+                 definitions:List,
+                 make_A:Union[str,None]=None,
+                 remove_solvent:bool=True,
+                 sequence: Optional[str]=None):
         """
         Fetches a pdb file into a transpiler obj.
+        The sequence was an attempt to fix a bug that was a mistake in a test. it is not needed for production.
 
         :param file: str file name
         :param definitions: Structure.chain_definitions e.g. [{'chain': 'A', 'uniprot': 'Q9BZ29', 'x': 1605, 'y': 2069, 'offset': 1604, 'range': '1605-2069', 'name': None, 'description': None},
@@ -59,11 +65,32 @@ class PyMolTranspiler_modifier:
                 self.pymol.cmd.sort()
                 self.pymol.cmd.alter('chain XXX', f'chain ="{make_A}"')
                 self.pymol.cmd.sort()
-            self.pymol.cmd.save('test1.pse')
             self.fix_structure()
             self.pymol.cmd.sort()
+            if sequence:
+                # assumes
+                # * chain A
+                # * it is a shifted issue due to missing residue making a shifted offset
+                # * that there is not a residue repeat
+                # make_A is chain letter in the definitions but A in the structure
+                chain_A = [chain for chain in definitions if chain['chain'] == make_A][0]
+
+                x = chain_A['x']
+                if self.pymol.cmd.select('chain A') == 0:
+                    raise ValueError('Somehow lost chain A.')
+                pdb_seq = self.pymol.cmd.get_fastastr(f'resi {x}-{x+19} and chain A').split('\n')[1]
+                ref_seq = sequence[x - 1:x+20]
+                if (pdb_seq[0] != ref_seq[0]) or (pdb_seq[1] != ref_seq[1]):
+                    for shift in range(20):
+                        if (pdb_seq[0] == ref_seq[0+shift]) and ((pdb_seq[1] == ref_seq[1+shift])):
+                            # self.pymol.cmd.alter('chain A', f'resv+={shift}')
+                            # self.pymol.cmd.sort()
+                            # # debug:
+                            # print('shifted', shift)
+                            # pdb_seq = self.pymol.cmd.get_fastastr(f'resi {x}-{x + 20} and chain A').split('\n')[1]
+                            # assert (pdb_seq[0] != ref_seq[0]) or (pdb_seq[1] != ref_seq[1]), 'Did not shift'
+                            break
             self.parse_ss()
-            self.pymol.cmd.save('test1.pse')
             self.raw_pdb = self.remove_anisou(self.pymol.cmd.get_pdbstr())
             return self
 
