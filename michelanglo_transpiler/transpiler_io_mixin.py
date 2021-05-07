@@ -98,6 +98,12 @@ class  PyMolTranspiler_io:
                     self.pymol.cmd.alter(f"{on} and chain {c}", f'chain="{new_chain}"')
                 else:
                     prime_chains.add(c)
+        # selenomethionine to methionine
+        if self.pymol.cmd.select('resn MSE') > 0:
+            self.pymol.cmd.alter('resn MSE and element SE', 'name=" SD "')
+            self.pymol.cmd.alter('resn MSE and element SE', 'element="S"')
+            self.pymol.cmd.alter('resn MSE', 'resn="MET"')
+            self.pymol.cmd.sort('all')
         self.pymol.cmd.alter("all", "segi=''") # not needed. NGL does not recognise segi. Currently writtten to ignore it.
         self.pymol.cmd.sort('all')
         # The delete states shortcut does not work:
