@@ -17,6 +17,10 @@ from typing import *
 import os, re
 import pymol2
 from Bio.Data.IUPACData import protein_letters_1to3 as p1to3
+import logging
+
+
+log = logging.getLogger()
 
 
 ###############################################################
@@ -43,6 +47,7 @@ class PyMolTranspiler_modifier:
 
         **PyMOL session**: self-contained.
         """
+        log.debug('Renumbering...')
         assert pdb is not None, 'No PDB block provided'
         assert pdb != '', 'Blank PDB block provided'
         with pymol2.PyMOL() as self.pymol:
@@ -59,11 +64,15 @@ class PyMolTranspiler_modifier:
             if remove_solvent:
                 self.pymol.cmd.remove('solvent')
             if make_A is not None and make_A != 'A':
-                self.pymol.cmd.alter('chain A', 'chain ="XXX"')
+                log.debug(self.pymol.cmd.get_fastastr('chain A'))
+                self.pymol.cmd.alter('chain A', 'chain="XXX"')
                 self.pymol.cmd.sort()
-                self.pymol.cmd.alter(f'chain {make_A}', 'chain ="A"')
+                log.debug(self.pymol.cmd.get_fastastr('chain XXX'))
+                self.pymol.cmd.alter(f'chain {make_A}', 'chain="A"')
                 self.pymol.cmd.sort()
-                self.pymol.cmd.alter('chain XXX', f'chain ="{make_A}"')
+                log.debug(self.pymol.cmd.get_fastastr('chain A'))
+                self.pymol.cmd.alter('chain XXX', f'chain="{make_A}"')
+                log.debug(self.pymol.cmd.get_fastastr(f'chain {make_A}'))
                 self.pymol.cmd.sort()
             self.fix_structure()
             self.pymol.cmd.sort()

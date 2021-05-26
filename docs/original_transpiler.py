@@ -842,7 +842,6 @@ class PyMolTranspiler:
         pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
         file = os.path.join('michelanglo_app', 'temp', pdb.lower()+'.pdb')
         for chain in definitions:
-            print(chain)
             if chain["offset"] != 0:
                 pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
         self.fix_structure()

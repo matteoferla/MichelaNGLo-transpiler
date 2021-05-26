@@ -19,7 +19,6 @@ from pprint import PrettyPrinter
 pprint = PrettyPrinter().pprint
 
 ###############################################################
-
 from .locking_singleton_pymol import GlobalPyMOL
 
 
