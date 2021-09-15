@@ -153,6 +153,8 @@ class PyMolTranspiler_modifier:
             if chains:
                 chain = chains[i]
             mutant = mutant.replace('p.','').strip()
+            if re.search("(\d+)", mutant) is None:
+                raise ValueError(f'{mutant} is not a mutation - like A24S or p.Ala24Ser')
             n = re.search("(\d+)", mutant).group(1)
             if re.match("\w{3}\d+\w{3}", mutant):  # 3 letter Arg
                 f = re.match("\w{3}\d+(\w{3})", mutant).group(1).upper()
