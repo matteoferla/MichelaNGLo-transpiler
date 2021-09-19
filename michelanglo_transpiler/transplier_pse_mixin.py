@@ -31,6 +31,8 @@ class PyMolTranspiler_PSE:
     ion_names = ('NA', 'MG', 'MN', 'FE', 'CO', '3CO', 'NI', 'NI1', 'NI2', 'CU', 'ZN', 'K', 'SO4', 'PO4', 'CL', 'F', 'BR')
     # The representation of non-bounded spheres appears a bit random
 
+    template_folder = ''  # michelanglo app proper has these.
+
     def transpile(self, file, view=None, representation=None, skip_disabled=True, combine_objects=True, **settings):
         """
         method that does the conversion of the PSE files.
@@ -566,13 +568,13 @@ class PyMolTranspiler_PSE:
         return self
 
     def get_js(self, **settings):
-        code = Template(filename=os.path.join('michelanglo_app', 'transpiler_templates', 'output.js.mako')) \
+        code = Template(filename=os.path.join(self.template_folder, 'output.js.mako')) \
             .render_unicode(structure=self, **settings)
         self.code = code
         return code
 
     def get_loadfun_js(self, **settings):
-        code = Template(filename=os.path.join('michelanglo_app', 'transpiler_templates', 'loadfun.js.mako')) \
+        code = Template(filename=os.path.join(self.template_folder, 'loadfun.js.mako')) \
             .render_unicode(structure=self, **settings)
         self.code = code
         return code

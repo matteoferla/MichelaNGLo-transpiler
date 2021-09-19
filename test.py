@@ -1,8 +1,17 @@
+## Test to be run at the michelanglo base folder level.
+
+transpiler_foldername = 'transpiler'
+app_foldername = 'app'
+
 from michelanglo_transpiler import PyMolTranspiler
 import os, argparse
 from warnings import warn
 import unittest
 
+# -----
+PyMolTranspiler.template_folder = os.path.join(app_foldername, 'michelanglo_app', 'transpiler_templates')
+PyMolTranspiler.tmp = os.path.join(app_foldername, 'michelanglo_app', 'temp')
+# -----
 warn('These test were used during development of the parts and teh code has changed since.')
 
 def test_pymol_output():
@@ -11,7 +20,7 @@ def test_pymol_output():
     transpiler.pdb = '1UBQ'
     view = ''
     reps = ''
-    data = open(os.path.join('michelanglo_app','static','pymol_demo.txt')).read().split('PyMOL>')
+    data = open(os.path.join(app_foldername, 'michelanglo_app','static','pymol_demo.txt')).read().split('PyMOL>')
     for block in data:
         if 'get_view' in block:
             view = block
@@ -30,7 +39,7 @@ def test_pymol_output():
 
 def test_new_template():
     #transpiler = PyMolTranspiler(file='git_docs/images/1ubq.pse')
-    transpiler = PyMolTranspiler().transpile(file='test/1ubq.pse')
+    transpiler = PyMolTranspiler().transpile(file=f'{transpiler_foldername}/test/1ubq.pse')
     transpiler.pdb = '1UBQ'
     transpiler.m4_alt = None
     code=transpiler.get_js(toggle_fx=True, viewport='viewport', variants=[], save_button='save_button', backgroundColor='white',tag_wrapped=True)
@@ -42,8 +51,8 @@ class Tests(unittest.TestCase):
         """
         Tests the pse transpiler
         """
-        transpiler = PyMolTranspiler().transpile(file='test/1ubq.pse')
-        transpiler.raw_pdb
+        transpiler = PyMolTranspiler().transpile(file=f'{app_foldername}/git_docs/images/1ubq.pse')
+        # transpiler.raw_pdb
 
     def test_transpile2(self):
         """
@@ -52,7 +61,7 @@ class Tests(unittest.TestCase):
         settings =  {'viewport': 'viewport', 'image': None, 'uniform_non_carbon': True, 'verbose': False, 'validation': True,
      'stick_format': 'sym_licorice', 'save': True, 'backgroundcolor': 'white', 'location_viewport': 'left',
      'columns_viewport': 9, 'columns_text': 3}
-        PyMolTranspiler().transpile(file='../app/michelanglo_app/demo/F.pse', **settings)
+        PyMolTranspiler().transpile(file=f'{app_foldername}/michelanglo_app/demo/F.pse', **settings)
 
 
 
@@ -60,7 +69,7 @@ class Tests(unittest.TestCase):
         """
         Testing the get view/reps
         """
-        transpiler = PyMolTranspiler().transpile(file='test/1ubq.pse')
+        transpiler = PyMolTranspiler().transpile(file=f'{app_foldername}/git_docs/images/1ubq.pse')
         v = transpiler.get_view()
         r = transpiler.get_reps()
         #print(v)
