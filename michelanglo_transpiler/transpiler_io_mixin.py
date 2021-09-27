@@ -127,7 +127,7 @@ class  PyMolTranspiler_io:
                     resi_end=resi_last,
                     chain=chain,
                     h_class=1,
-                    length=int(resi_last) - int(resi_start)
+                    length=int(resi_last) - int(resi_start) # already polished
                 ))
                 ss_count[ss_last] += 1
             elif ss_last == 'S':  # previous was the other type
@@ -140,7 +140,7 @@ class  PyMolTranspiler_io:
                     resi_end=resi_last,
                     chain=chain,
                     h_class=0,
-                    length=int(resi_last) - int(resi_start)
+                    length=resi_last - resi_start
                 ))
                 ss_count[ss_last] += 1
 

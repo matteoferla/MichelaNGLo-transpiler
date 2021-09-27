@@ -391,14 +391,15 @@ class PyMolTranspiler_PSE:
         """
         Given a list of residues makes a list of hyphen range string
         """
-        l = sorted(l)
+        icode_polish = lambda resi: int(re.search(r'(\d+)', resi).group(1))
+        l = sorted(map(icode_polish, l))
         if len(l) < 2:
             return l
         parts = []
         start = l[0]
         for i in range(1, len(l)):
-            fore = int(l[i - 1])
-            aft = int(l[i])
+            fore = l[i - 1]
+            aft = l[i]
             if fore + 1 == aft:
                 # contiguous
                 continue
@@ -497,6 +498,7 @@ class PyMolTranspiler_PSE:
         first_resi = defaultdict(lambda: 9999)
         last_resi = defaultdict(lambda: -9999)
         heteros = set()
+        icode_polish = lambda resi: int(re.search(r'(\d+)', resi).group(1))
         for on in self.pymol.cmd.get_names(
                 enabled_only=1):  # pymol.cmd.get_names_of_type('object:molecule') does not handle enabled.
             if self.pymol.cmd.get_type(on) == 'object:molecule':
@@ -505,7 +507,7 @@ class PyMolTranspiler_PSE:
                     for at in o.atom:
                         if not at.hetatm:
                             if at.resi.isdigit():
-                                r = int(at.resi)
+                                r = icode_polish(at.resi)
                             else:  ## likely a weird internal residue
                                 continue
                             if r < first_resi[at.chain]:
