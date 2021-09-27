@@ -843,6 +843,7 @@ class PyMolTranspiler:
         file = os.path.join('michelanglo_app', 'temp', pdb.lower()+'.pdb')
         for chain in definitions:
             if chain["offset"] != 0:
+                # the following is a pymol command not a typo f-string
                 pymol.cmd.alter(f'chain {chain["chain"]}', f'resi=str(int(resi)+{chain["offset"]})')
         self.fix_structure()
         self.parse_ss()
