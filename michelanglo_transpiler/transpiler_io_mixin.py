@@ -16,7 +16,7 @@ __citation__ = "Ferla et al. (2020) MichelaNGLo:  sculpting  protein  views on w
 from warnings import warn
 from pprint import PrettyPrinter
 pprint = PrettyPrinter().pprint
-import pymol2
+import pymol2, re
 
 ###############################################################
 
@@ -156,6 +156,7 @@ class  PyMolTranspiler_io:
         resn_last = 'XXX'
         ss_count = {'H': 1, 'S': 1, 'L': 0}
         chain = 'X'
+        icode_polish = lambda resi: int(re.search(r'(\d+)', resi).group(1))
         for line in data:  # ss_list:
             if line['name'] == 'CA':
                 (resi_this, ss_this, resn_this, chain) = (line['resi'], line['ss'], line['resn'], line['chain'])
@@ -164,11 +165,11 @@ class  PyMolTranspiler_io:
                     _deal_with()
                     # deal with current
                     if ss_this in ('S', 'H'):  # start of a new
-                        resi_start = resi_this
+                        resi_start = icode_polish(resi_this)
                         resn_start = resn_this
                         ss_last = ss_this
                 # move on
-                resi_last = resi_this
+                resi_last = icode_polish(resi_this)
                 resn_last = resn_this
                 ss_last = ss_this
         _deal_with()
