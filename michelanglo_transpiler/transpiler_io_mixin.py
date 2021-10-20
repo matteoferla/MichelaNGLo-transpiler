@@ -33,7 +33,7 @@ class  PyMolTranspiler_io:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol: #pymol2.PyMOL()
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             self.pymol.cmd.load(file)
             extension = file.split('.')[-1]
             headers = []

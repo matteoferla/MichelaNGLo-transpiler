@@ -51,7 +51,7 @@ class PyMolTranspiler_modifier:
         assert pdb is not None, 'No PDB block provided'
         assert pdb != '', 'Blank PDB block provided'
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             if len(pdb) == 4: ##Is this block redundant?
                 self.pymol.cmd.fetch(pdb, type='pdb')  ## using PDB for simplicity. Using CIF may be nicer...
             else:
@@ -114,7 +114,7 @@ class PyMolTranspiler_modifier:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             combofile = infile.replace('.sdf', '_combo.pdb')
             minusfile = infile.replace('.sdf', '_ref.pdb')
             self.pymol.cmd.load(infile, 'ligand')
@@ -270,7 +270,7 @@ class PyMolTranspiler_modifier:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             self.pymol.cmd.fetch(code)
             if water:
                 self.pymol.cmd.remove('solvent')
@@ -293,7 +293,7 @@ class PyMolTranspiler_modifier:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             self.pymol.cmd.load(infile)
             if water:
                 self.pymol.cmd.remove('solvent')
@@ -329,7 +329,7 @@ class PyMolTranspiler_modifier:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             self.pymol.cmd.fetch(code)
             self._chain_removal(outfile, chains)
         return 1
@@ -345,7 +345,7 @@ class PyMolTranspiler_modifier:
         **PyMOL session**: self-contained.
         """
         with pymol2.PyMOL() as self.pymol:
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             self.pymol.cmd.load(infile)
             self._chain_removal(outfile, chains)
         return 1

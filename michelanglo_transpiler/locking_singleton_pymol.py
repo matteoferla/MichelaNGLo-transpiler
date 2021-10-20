@@ -21,12 +21,6 @@ import pymol2
 from threading import Lock
 
 ###############################################################
-# Hardcoded variable.
-# override with pymol.cmd.set('fetch_path', tempfolder)
-tempfolder = os.getcwd() + '/michelanglo_app/temp'
-
-
-###############################################################
 
 class GlobalPyMOL:
     """
@@ -35,7 +29,6 @@ class GlobalPyMOL:
     """
     pymol = pymol2.SingletonPyMOL()
     pymol.start()
-    pymol.cmd.set('fetch_path', tempfolder)
     pylock = Lock()
 
     def __init__(self):

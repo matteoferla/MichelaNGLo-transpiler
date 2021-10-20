@@ -33,8 +33,6 @@ class PyMolTranspiler_base:
     # this is not used anymore.
     current_task = f'[{datetime.utcnow()}] idle'
     verbose = False
-    # temp folder.
-    tmp = os.getcwd()
     swatch = ColorSwatch([('white', 0, (1.0, 1.0, 1.0)), ('black', 1, (0.0, 0.0, 0.0)), ('blue', 2, (0.0, 0.0, 1.0)),
                           ('green', 3, (0.0, 1.0, 0.0)), ('red', 4, (1.0, 0.0, 0.0)),
                           ('cyan', 5, (0.0, 1.0, 1.0)), ('yellow', 6, (1.0, 1.0, 0.0)), ('dash', 7, (1.0, 1.0, 0.0)),
@@ -198,6 +196,7 @@ class PyMolTranspiler_base:
                           ('deuterium', 5385, (0.8999999761581421, 0.8999999761581421, 0.8999999761581421)),
                           ('lonepair', 5386, (0.5, 0.5, 0.5)),
                           ('pseudoatom', 5387, (0.8999999761581421, 0.8999999761581421, 0.8999999761581421))])
+    temporary_folder = 'temp' # overridden in michelanglo_app.setup_folders
     _iterate_cmd = "data.append({'ID': ID,  'segi': segi, 'chain': chain, 'resi': resi, 'resn': resn, 'name':name, 'elem':elem, 'reps':reps, 'color':color, 'ss': ss, 'cartoon': cartoon, 'label': label, 'type': type})"
     boring_ligand = (  # 'WAT', 'HOH',  # `TP3` water is ambiguous and rare
         'LI', 'NA', 'K', 'RB',  # group 1 cations
@@ -563,7 +562,6 @@ class PyMolTranspiler_base:
         self.ss = []
         self.headers = []  # overwrides .ss in dynamic attr pdb_block
         self.code = ''
-        self.temp_folder = os.getcwd() + '/michelanglo_app/temp'
         self.pymol = None
         self.raw_pdb = None  # this is set from the instance `prot.raw_pdb = open(file).read()`
         self.custom_mesh = []

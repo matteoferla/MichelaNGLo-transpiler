@@ -10,7 +10,7 @@ import unittest
 
 # -----
 PyMolTranspiler.template_folder = os.path.join(app_foldername, 'michelanglo_app', 'transpiler_templates')
-PyMolTranspiler.tmp = os.path.join(app_foldername, 'michelanglo_app', 'temp')
+#PyMolTranspiler.tmp = os.path.join(app_foldername, 'michelanglo_app', 'temp')
 # -----
 warn('These test were used during development of the parts and teh code has changed since.')
 

@@ -53,7 +53,7 @@ class PyMolTranspiler_PSE:
         """
         with pymol2.PyMOL() as self.pymol:
             # fix structure requires signeton
-            self.pymol.cmd.set('fetch_path', self.temp_folder)
+            self.pymol.cmd.set('fetch_path', self.temporary_folder)
             if file:
                 self.log(f'[JOB={self.job}] file {file}')
                 assert '.pse' in file.lower(), 'Only PSE files accepted.'
@@ -177,7 +177,7 @@ class PyMolTranspiler_PSE:
                         This secion has an issue with the alibi transformation.
                         The coordinate vectors need to be moved by the camera movement probably.
                         """
-                        objfile = os.path.join(self.tmp, os.path.split(file)[1].replace('.pse', '.obj'))
+                        objfile = os.path.join(self.temporary_folder, os.path.split(file)[1].replace('.pse', '.obj'))
                         self.pymol.cmd.save(objfile)
                         self.custom_mesh = PyMolTranspiler.convert_mesh(open(objfile, 'r'))
                         os.remove(objfile)
