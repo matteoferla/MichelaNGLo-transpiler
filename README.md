@@ -6,6 +6,8 @@ The site [michelanglo.sgc.ox.ac.uk](https://michelanglo.sgc.ox.ac.uk) depends on
 * **MichelaNGLo-transpiler**
 * [MichelaNGLo-protein-module](https://github.com/matteoferla/MichelaNGLo-protein-module)
 
+The top-level repo is [Michelanglo-and-Venus](https://github.com/matteoferla/Michelanglo-and-Venus)
+
 This module is self-standing, so can be used outside of the app or protein-module.
 
 ## Implementation
