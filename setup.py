@@ -1,9 +1,6 @@
 import setuptools
 ##from setuptools.command.install import install
 
-with open("README.md", "r") as fh:
-
-
 import os
 this_directory = os.path.abspath(os.path.dirname(__file__))
 try:
